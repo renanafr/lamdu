@@ -1,20 +1,25 @@
 module Graphics.UI.Bottle.MainLoop (mainLoopAnim, mainLoopImage, mainLoopWidget) where
 
+import Control.Applicative ((<$>))
+import Control.Arrow ((&&&), (***))
 import Control.Concurrent (threadDelay)
+import Control.Concurrent.MVar
 import Control.Lens ((^.), (%~), (.~), _1, _2)
 import Control.Monad (when)
 import Data.IORef
 import Data.MRUMemo (memoIO)
+import Data.Monoid (mappend)
 import Data.StateVar (($=))
-import Data.Time.Clock (getCurrentTime, diffUTCTime)
+import Data.Time.Clock (NominalDiffTime, getCurrentTime, diffUTCTime)
 import Data.Traversable (traverse, sequenceA)
 import Data.Vector.Vector2 (Vector2(..))
 import Graphics.DrawingCombinators ((%%))
-import Graphics.DrawingCombinators.Utils (Image)
+import Graphics.DrawingCombinators.Utils (Image, drawText, textSize)
 import Graphics.UI.Bottle.Animation(AnimId)
 import Graphics.UI.Bottle.Widget(Widget)
 import Graphics.UI.GLFW.Events (KeyEvent, GLFWEvent(..), eventLoop)
 import qualified Control.Lens as Lens
+import qualified Data.Vector.Vector2 as Vector2
 import qualified Graphics.DrawingCombinators as Draw
 import qualified Graphics.Rendering.OpenGL.GL as GL
 import qualified Graphics.UI.Bottle.Animation as Anim
@@ -22,11 +27,26 @@ import qualified Graphics.UI.Bottle.EventMap as E
 import qualified Graphics.UI.Bottle.Widget as Widget
 import qualified Graphics.UI.GLFW as GLFW
 
+timeBetweenInvocations ::
+  IO ((Maybe NominalDiffTime -> IO a) -> IO a)
+timeBetweenInvocations = do
+  mLastInvocationTimeVar <- newMVar Nothing
+  return $ modifyMVar mLastInvocationTimeVar . updateTime
+  where
+    updateTime f mLastInvocationTime = do
+      currentTime <- getCurrentTime
+      let
+        mTimeSince =
+          fmap (currentTime `diffUTCTime`) mLastInvocationTime
+      result <- f mTimeSince
+      return (Just currentTime, result)
+
 mainLoopImage
-  :: (Widget.Size -> KeyEvent -> IO Bool)
+  :: Draw.Font -> (Widget.Size -> KeyEvent -> IO Bool)
   -> (Bool -> Widget.Size -> IO (Maybe Image)) -> IO a
-mainLoopImage eventHandler makeImage =
-  eventLoop handleEvents
+mainLoopImage fpsFont eventHandler makeImage = do
+  addDelayArg <- timeBetweenInvocations
+  eventLoop $ handleEvents addDelayArg
   where
     windowSize = do
       (x, y) <- GLFW.getWindowDimensions
@@ -38,13 +58,28 @@ mainLoopImage eventHandler makeImage =
       error "Quit" -- TODO: Make close event
     handleEvent _ GLFWWindowRefresh = return True
 
-    handleEvents events = do
+    useFont = drawText fpsFont &&& textSize fpsFont
+    scale w h = (Draw.scale w h %%) *** (* Vector2 w h)
+    placeAt winSize ratio (image, size) =
+      Draw.translate
+      (Vector2.uncurry (,) (ratio * (winSize - size))) %% image
+    addDelayToImage winSize mkMImage mTimeSince = do
+      mImage <- mkMImage
+      return $
+        fmap
+          (mappend . placeAt winSize (Vector2 1 0) . scale 20 20 .
+           useFont . maybe "N/A" (show . (1/)) $
+           mTimeSince)
+          mImage
+
+    handleEvents addDelayArg events = do
       winSize@(Vector2 winSizeX winSizeY) <- windowSize
       anyChange <- fmap or $ traverse (handleEvent winSize) events
       GL.viewport $=
         (GL.Position 0 0,
          GL.Size (round winSizeX) (round winSizeY))
-      mNewImage <- makeImage anyChange winSize
+      mNewImage <-
+        addDelayArg . addDelayToImage winSize $ makeImage anyChange winSize
       case mNewImage of
         Nothing ->
           -- TODO: If we can verify that there's sync-to-vblank, we
@@ -56,12 +91,13 @@ mainLoopImage eventHandler makeImage =
           (Draw.scale (2/winSizeX) (-2/winSizeY) %%) $
           image
 
-mainLoopAnim
-  :: (Widget.Size -> IO (Maybe (AnimId -> AnimId)))
-  -> (Widget.Size -> KeyEvent -> IO (Maybe (AnimId -> AnimId)))
-  -> (Widget.Size -> IO Anim.Frame)
-  -> IO Anim.R -> IO a
-mainLoopAnim tickHandler eventHandler makeFrame getAnimationHalfLife = do
+mainLoopAnim ::
+  Draw.Font ->
+  (Widget.Size -> IO (Maybe (AnimId -> AnimId))) ->
+  (Widget.Size -> KeyEvent -> IO (Maybe (AnimId -> AnimId))) ->
+  (Widget.Size -> IO Anim.Frame) ->
+  IO Anim.R -> IO a
+mainLoopAnim font tickHandler eventHandler makeFrame getAnimationHalfLife = do
   frameStateVar <- newIORef Nothing
   let
     handleResult Nothing = return False
@@ -111,13 +147,13 @@ mainLoopAnim tickHandler eventHandler makeFrame getAnimationHalfLife = do
     stopAtDrawCount = 3
     imgEventHandler size event =
       handleResult =<< eventHandler size event
-  mainLoopImage imgEventHandler makeImage
+  mainLoopImage font imgEventHandler makeImage
 
 compose :: [a -> a] -> a -> a
 compose = foldr (.) id
 
-mainLoopWidget :: (Widget.Size -> IO (Widget IO)) -> IO Anim.R -> IO a
-mainLoopWidget mkWidgetUnmemod getAnimationHalfLife = do
+mainLoopWidget :: Draw.Font -> (Widget.Size -> IO (Widget IO)) -> IO Anim.R -> IO a
+mainLoopWidget font mkWidgetUnmemod getAnimationHalfLife = do
   mkWidgetRef <- newIORef =<< memoIO mkWidgetUnmemod
   let
     newWidget = writeIORef mkWidgetRef =<< memoIO mkWidgetUnmemod
@@ -140,5 +176,5 @@ mainLoopWidget mkWidgetUnmemod getAnimationHalfLife = do
         Nothing -> return ()
         Just _ -> newWidget
       return mAnimIdMapping
-    mkFrame size = fmap (Lens.view Widget.wFrame) $ getWidget size
-  mainLoopAnim tickHandler eventHandler mkFrame getAnimationHalfLife
+    mkFrame size = Lens.view Widget.wFrame <$> getWidget size
+  mainLoopAnim font tickHandler eventHandler mkFrame getAnimationHalfLife

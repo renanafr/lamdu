@@ -164,7 +164,7 @@ mainLoopDebugMode font makeWidget addHelp = do
         (Widget.keysEventMap Config.debugModeKeys doc set)
         widget
     makeDebugModeWidget size = addHelp size =<< addDebugMode =<< makeWidget size
-  mainLoopWidget makeDebugModeWidget getAnimHalfLife
+  mainLoopWidget font makeDebugModeWidget getAnimHalfLife
 
 cacheMakeWidget :: Eq a => (a -> IO (Widget IO)) -> IO (a -> IO (Widget IO))
 cacheMakeWidget mkWidget = do
