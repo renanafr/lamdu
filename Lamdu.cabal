@@ -92,7 +92,8 @@ Library
                        template-haskell,
                        time >= 1.2,
                        transformers >= 0.2.1,
-                       utf8-string >= 0.3
+                       utf8-string >= 0.3,
+                       printf-mauke
 
   ghc-options:         -O2 -Wall
   ghc-prof-options:    -Wall -auto-all -caf-all -rtsopts

@@ -1,14 +1,15 @@
+{-# LANGUAGE TemplateHaskell #-}
 module Graphics.UI.Bottle.MainLoop (mainLoopAnim, mainLoopImage, mainLoopWidget) where
 
-import Control.Applicative ((<$>))
-import Control.Arrow ((&&&), (***))
+import Control.Applicative ((<$>), (<*>))
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar
 import Control.Lens ((^.), (%~), (.~), _1, _2)
 import Control.Monad (when)
 import Data.IORef
+import Data.List (genericLength)
 import Data.MRUMemo (memoIO)
-import Data.Monoid (mappend)
+import Data.Monoid (Monoid(..))
 import Data.StateVar (($=))
 import Data.Time.Clock (NominalDiffTime, getCurrentTime, diffUTCTime)
 import Data.Traversable (traverse, sequenceA)
@@ -16,16 +17,17 @@ import Data.Vector.Vector2 (Vector2(..))
 import Graphics.DrawingCombinators ((%%))
 import Graphics.DrawingCombinators.Utils (Image, drawText, textSize)
 import Graphics.UI.Bottle.Animation(AnimId)
-import Graphics.UI.Bottle.Widget(Widget)
+import Graphics.UI.Bottle.Widget(Widget, R)
 import Graphics.UI.GLFW.Events (KeyEvent, GLFWEvent(..), eventLoop)
+import Text.Printf.Mauke.TH
 import qualified Control.Lens as Lens
-import qualified Data.Vector.Vector2 as Vector2
 import qualified Graphics.DrawingCombinators as Draw
 import qualified Graphics.Rendering.OpenGL.GL as GL
 import qualified Graphics.UI.Bottle.Animation as Anim
 import qualified Graphics.UI.Bottle.EventMap as E
 import qualified Graphics.UI.Bottle.Widget as Widget
 import qualified Graphics.UI.GLFW as GLFW
+import qualified Graphics.UI.GLFW.Utils as GLFWUtils
 
 timeBetweenInvocations ::
   IO ((Maybe NominalDiffTime -> IO a) -> IO a)
@@ -41,12 +43,49 @@ timeBetweenInvocations = do
       result <- f mTimeSince
       return (Just currentTime, result)
 
-mainLoopImage
-  :: Draw.Font -> (Widget.Size -> KeyEvent -> IO Bool)
-  -> (Bool -> Widget.Size -> IO (Maybe Image)) -> IO a
-mainLoopImage fpsFont eventHandler makeImage = do
+mkStatser :: (Ord a, Fractional a) => Int -> IO (a -> IO (a, a, a))
+mkStatser n = do
+  fifo <- newIORef []
+  return $ \added -> do
+    modifyIORef fifo (take n . (added:))
+    samples <- readIORef fifo
+    return (minimum samples, avg samples, maximum samples)
+  where
+    avg = (/) <$> sum <*> genericLength
+
+data SizedImage = SizedImage Image Widget.Size
+
+instance Monoid SizedImage where
+  mempty = SizedImage mempty 0
+  SizedImage img0 sz0 `mappend` SizedImage img1 sz1 =
+    SizedImage (img0 `mappend` img1) (max <$> sz0 <*> sz1)
+
+scale :: Vector2 R -> SizedImage -> SizedImage
+scale factor@(Vector2 w h) (SizedImage img size) =
+  SizedImage (Draw.scale w h %% img) (factor * size)
+
+-- pos must be positive
+translate :: Vector2 R -> SizedImage -> SizedImage
+translate pos@(Vector2 x y) (SizedImage img size) =
+  SizedImage (Draw.translate (x, y) %% img) (size + pos)
+
+getSizedImage :: SizedImage -> Image
+getSizedImage (SizedImage img _) = img
+
+placeAt :: Widget.Size -> Vector2 R -> SizedImage -> SizedImage
+placeAt winSize ratio img@(SizedImage _ size) =
+  translate (ratio * (winSize - size)) img
+
+renderText :: Draw.Font -> String -> SizedImage
+renderText fpsFont text = SizedImage (drawText fpsFont text) (textSize fpsFont text)
+
+mainLoopImage ::
+  Draw.Font -> (Widget.Size -> KeyEvent -> IO Bool) ->
+  (Bool -> Widget.Size -> IO (Maybe Image)) -> IO a
+mainLoopImage fpsFont eventHandler makeImage = GLFWUtils.withGLFW $ do
+  statser <- mkStatser 20
   addDelayArg <- timeBetweenInvocations
-  eventLoop $ handleEvents addDelayArg
+  eventLoop $ handleEvents statser addDelayArg
   where
     windowSize = do
       (x, y) <- GLFW.getWindowDimensions
@@ -58,28 +97,26 @@ mainLoopImage fpsFont eventHandler makeImage = do
       error "Quit" -- TODO: Make close event
     handleEvent _ GLFWWindowRefresh = return True
 
-    useFont = drawText fpsFont &&& textSize fpsFont
-    scale w h = (Draw.scale w h %%) *** (* Vector2 w h)
-    placeAt winSize ratio (image, size) =
-      Draw.translate
-      (Vector2.uncurry (,) (ratio * (winSize - size))) %% image
-    addDelayToImage winSize mkMImage mTimeSince = do
+    addDelayToImage statser winSize mkMImage mTimeSince = do
       mImage <- mkMImage
+      let
+        locate i = translate $ Vector2 0 (2*i)
+        mkFpsImage (lo, avg, hi) =
+          scale 20 . mconcat . zipWith locate [0..] $
+          map (renderText fpsFont . $(printf "%02.02f")) [lo, avg, hi]
+      fpsImage <- maybe (return mempty) (fmap mkFpsImage . statser . (1/)) mTimeSince
       return $
-        fmap
-          (mappend . placeAt winSize (Vector2 1 0) . scale 20 20 .
-           useFont . maybe "N/A" (show . (1/)) $
-           mTimeSince)
-          mImage
+        mappend (getSizedImage (placeAt winSize (Vector2 1 0) fpsImage)) <$>
+        mImage
 
-    handleEvents addDelayArg events = do
+    handleEvents statser addDelayArg events = do
       winSize@(Vector2 winSizeX winSizeY) <- windowSize
       anyChange <- fmap or $ traverse (handleEvent winSize) events
       GL.viewport $=
         (GL.Position 0 0,
          GL.Size (round winSizeX) (round winSizeY))
       mNewImage <-
-        addDelayArg . addDelayToImage winSize $ makeImage anyChange winSize
+        addDelayArg . addDelayToImage statser winSize $ makeImage anyChange winSize
       case mNewImage of
         Nothing ->
           -- TODO: If we can verify that there's sync-to-vblank, we
