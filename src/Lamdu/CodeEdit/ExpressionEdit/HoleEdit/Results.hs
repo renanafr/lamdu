@@ -193,10 +193,12 @@ baseExprWithApplyForms ::
   CT m [ExprIRef.ExpressionM m ApplyFormAnnotation]
 baseExprWithApplyForms holeInfo baseExpr =
   maybe [] applyForms <$>
-  (hiActions holeInfo ^. Sugar.holeInferExprType) baseExpr
+  Sugar.holeLoadInferExprType (hiActions holeInfo) baseExpr
   where
-    applyForms baseExprType =
-      ExprUtil.applyForms baseExprType baseExpr
+    applyForms (baseExprInferred, _) =
+      ExprUtil.applyForms
+      (baseExprInferred ^. Expr.ePayload . Lens._1 & Infer.iType & void)
+      baseExpr
 
 storePointExpr ::
   Monoid a =>
@@ -235,7 +237,9 @@ injectIntoHoles holeInfo arg =
   Lens.Context id
   where
     typeCheckOnSide expr =
-      (expr <$) <$> (hiActions holeInfo ^. Sugar.holeInferExprType) (void expr)
+      (expr <$) <$>
+      Sugar.holeLoadInferExprType
+      (hiActions holeInfo) (void expr)
     toOrd IndependentParamAdded = 'a'
     toOrd DependentParamAdded = 'b'
     toOrd Untouched = 'c'

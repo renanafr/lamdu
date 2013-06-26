@@ -169,13 +169,12 @@ mkHole exprPl = do
   sugarContext <- SugarM.readContext
   mPaste <- fmap join . traverse mkPaste $ exprPl ^. SugarInfer.plStored
   let
+    cp = sugarContext ^. SugarM.scCodeAnchors
     mkWritableHoleActions exprPlStored = do
       globals <-
-        SugarM.liftTransaction . Transaction.getP . Anchors.globals $
-        sugarContext ^. SugarM.scCodeAnchors
+        SugarM.liftTransaction . Transaction.getP $ Anchors.globals cp
       tags <-
-        SugarM.liftTransaction . Transaction.getP . Anchors.tags $
-        sugarContext ^. SugarM.scCodeAnchors
+        SugarM.liftTransaction . Transaction.getP $ Anchors.tags cp
       pure HoleActions
         { _holePaste = mPaste
         , _holeMUnwrap = Nothing
@@ -187,10 +186,9 @@ mkHole exprPl = do
           , mapM getTag tags
           ]
         , _holeInferredType = void $ Infer.iType inferred
-        , _holeInferExprType = inferExprType
+        , holeLoadInferExprType = inferOnTheSide sugarContext $ Infer.nScope point
         , holeResult = makeHoleResult sugarContext exprPlStored
         }
-    inferExprType = inferOnTheSide sugarContext $ Infer.nScope point
   mActions <-
     exprPl
     & SugarInfer.plData .~ ()
@@ -227,15 +225,17 @@ chooseHoleType inferredVals plain inferred =
   _ -> plain
 
 inferOnTheSide ::
-  (MonadA m, Typeable1 m) =>
+  (MonadA m, Typeable1 m, Binary a, Cache.Key a) =>
   SugarM.Context m ->
   Infer.Scope (DefM m) ->
-  ExprIRef.ExpressionM m () ->
-  CT m (Maybe (ExprIRef.ExpressionM m ()))
+  ExprIRef.ExpressionM m a ->
+  CT m
+  (Maybe
+   ( ExprIRef.ExpressionM m (Infer.Inferred (DefM m), a)
+   , Infer.Context (DefM m)
+   ))
 -- token represents the given holeInferContext
 inferOnTheSide sugarContext scope expr =
-  (fmap . fmap)
-  (void . Infer.iType . (^. Lens._1 . Expr.ePayload . Lens._1)) .
   -- We can use the same inferStateKey despite making a new node here,
   -- because we haven't altered the context in a meaningful way, we've
   -- added an independent node. This won't collide with inference at

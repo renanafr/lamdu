@@ -49,7 +49,7 @@ module Lamdu.CodeEdit.Sugar.Types
   , HoleResultSeed(..), _ResultSeedExpression, _ResultSeedNewTag, _ResultSeedNewDefinition
   , ScopeItem
   , Scope(..), scopeLocals, scopeGlobals, scopeTags, scopeGetParams
-  , HoleActions(..), holeScope, holePaste, holeMUnwrap, holeInferExprType, holeInferredType
+  , HoleActions(..), holeScope, holePaste, holeMUnwrap, holeInferredType
   , HoleResult(..)
     , holeResultInferred
     , holeResultConverted
@@ -205,11 +205,18 @@ data HoleActions name m = HoleActions
     -- but with the hole's scope.
     -- If given expression does not type check on its own, returns Nothing.
     -- (used by HoleEdit to suggest variations based on type)
-    _holeInferExprType :: ExprIRef.ExpressionM m () -> CT m (Maybe (ExprIRef.ExpressionM m ()))
+    holeLoadInferExprType ::
+      forall a. (Binary a, Typeable a, Ord a) =>
+      ExprIRef.ExpressionM m a ->
+      CT m
+      (Maybe
+       ( ExprIRef.ExpressionM m (Infer.Inferred (DefM m), a)
+       , Infer.Context (DefM m)
+       ))
   , _holeInferredType :: ExprIRef.ExpressionM m ()
   , holeResult ::
       forall a.
-      (Binary a, Typeable a, Ord a, Monoid a) =>
+      (Binary a, Monoid a, Typeable a, Ord a) =>
       HoleResultSeed m (Maybe (TypesInternal.StorePoint (Tag m)), a) ->
       CT m (Maybe (HoleResult name m a))
   , _holePaste :: Maybe (T m Guid)
