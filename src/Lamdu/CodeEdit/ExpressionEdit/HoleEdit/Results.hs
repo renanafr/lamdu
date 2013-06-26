@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, TemplateHaskell #-}
+{-# LANGUAGE OverloadedStrings, TemplateHaskell, ConstraintKinds #-}
 module Lamdu.CodeEdit.ExpressionEdit.HoleEdit.Results
   ( makeAll, HaveHiddenResults(..)
   , Result(..)
@@ -15,6 +15,7 @@ import Control.Monad.Trans.Either.Utils (leftToJust, justToLeft)
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Monad.Trans.State (StateT)
 import Control.MonadA (MonadA)
+import Data.Binary (Binary)
 import Data.Cache (Cache)
 import Data.Function (on)
 import Data.List (isInfixOf, isPrefixOf, partition)
@@ -32,6 +33,7 @@ import Lamdu.Data.Expression (Expression(..))
 import Lamdu.Data.Expression.IRef (DefM)
 import Lamdu.Data.Expression.Utils (ApplyFormAnnotation(..), pureHole)
 import qualified Control.Lens as Lens
+import qualified Data.Cache as Cache
 import qualified Data.Char as Char
 import qualified Data.Foldable as Foldable
 import qualified Data.List.Class as List
@@ -189,8 +191,8 @@ typeCheckToResultsList holeInfo makeWidget baseId options =
   typeCheckResults holeInfo options
 
 baseExprWithApplyForms ::
-  MonadA m => HoleInfo m -> ExprIRef.ExpressionM m () ->
-  CT m [ExprIRef.ExpressionM m ApplyFormAnnotation]
+  (MonadA m, Binary a, Cache.Key a) => HoleInfo m -> ExprIRef.ExpressionM m a ->
+  CT m [ExprIRef.ExpressionM m (ApplyFormAnnotation a)]
 baseExprWithApplyForms holeInfo baseExpr =
   maybe [] applyForms <$>
   Sugar.holeLoadInferExprType (hiActions holeInfo) baseExpr
@@ -229,7 +231,7 @@ removeWrappers expr
 injectIntoHoles ::
   MonadA m => HoleInfo m ->
   Sugar.ExprStorePoint m a ->
-  ExprIRef.ExpressionM m (ApplyFormAnnotation, a) ->
+  ExprIRef.ExpressionM m (ApplyFormAnnotation (), a) ->
   CT m [Sugar.ExprStorePoint m a]
 injectIntoHoles holeInfo arg =
   fmap catMaybes . mapM injectArg . injectArgPositions .
@@ -242,7 +244,7 @@ injectIntoHoles holeInfo arg =
       (hiActions holeInfo) (void expr)
     toOrd IndependentParamAdded = 'a'
     toOrd DependentParamAdded = 'b'
-    toOrd Untouched = 'c'
+    toOrd Untouched {} = 'c'
     condition subExpr =
       Lens.has ExprLens.exprHole subExpr &&
       DependentParamAdded /= (subExpr ^. Expr.ePayload . contextVal . Lens._1)
@@ -258,7 +260,7 @@ injectIntoHoles holeInfo arg =
 
 maybeInjectArgumentExpr ::
   MonadA m => HoleInfo m ->
-  [ExprIRef.ExpressionM m ApplyFormAnnotation] ->
+  [ExprIRef.ExpressionM m (ApplyFormAnnotation ())] ->
   CT m [Sugar.ExprStorePoint m ExprGuiM.Payload]
 maybeInjectArgumentExpr holeInfo =
   case hiMArgument holeInfo of

@@ -141,18 +141,18 @@ subst lens to expr
   | Lens.has lens expr = to
   | otherwise = expr & eBody . traverse %~ subst lens to
 
-data ApplyFormAnnotation =
-  Untouched | DependentParamAdded | IndependentParamAdded
+data ApplyFormAnnotation a =
+  Untouched a | DependentParamAdded | IndependentParamAdded
   deriving Eq
 
 -- Transform expression to expression applied with holes,
 -- with all different sensible levels of currying.
-applyForms :: Expression def () -> Expression def () -> [Expression def ApplyFormAnnotation]
+applyForms :: Expression def () -> Expression def a -> [Expression def (ApplyFormAnnotation a)]
 applyForms exprType rawExpr
   | Lens.has (ExprLens.exprLam . lambdaKind . _Val) expr = [expr]
   | otherwise = reverse withAllAppliesAdded
   where
-    expr = Untouched <$ rawExpr
+    expr = Untouched <$> rawExpr
     withDepAppliesAdded =
       foldl (addApply DependentParamAdded) expr depParams
     withAllAppliesAdded =
