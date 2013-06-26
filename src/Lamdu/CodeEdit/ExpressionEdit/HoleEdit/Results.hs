@@ -190,17 +190,17 @@ typeCheckToResultsList holeInfo makeWidget baseId options =
   mResultsListOf holeInfo makeWidget baseId <$>
   typeCheckResults holeInfo options
 
-baseExprWithApplyForms ::
+loadInferAndAddApplyForms ::
   (MonadA m, Binary a, Cache.Key a) => HoleInfo m -> ExprIRef.ExpressionM m a ->
-  CT m [ExprIRef.ExpressionM m (ApplyFormAnnotation a)]
-baseExprWithApplyForms holeInfo baseExpr =
+  CT m [ExprIRef.ExpressionM m (ApplyFormAnnotation (Infer.Inferred (DefM m), a))]
+loadInferAndAddApplyForms holeInfo baseExpr =
   maybe [] applyForms <$>
   Sugar.holeLoadInferExprType (hiActions holeInfo) baseExpr
   where
     applyForms (baseExprInferred, _) =
       ExprUtil.applyForms
       (baseExprInferred ^. Expr.ePayload . Lens._1 & Infer.iType & void)
-      baseExpr
+      baseExprInferred
 
 storePointExpr ::
   Monoid a =>
@@ -229,15 +229,19 @@ removeWrappers expr
       (ExprLens.exprApply . Expr.applyFunc . ExprLens.exprHole)
 
 injectIntoHoles ::
+  forall m a.
   MonadA m => HoleInfo m ->
   Sugar.ExprStorePoint m a ->
-  ExprIRef.ExpressionM m (ApplyFormAnnotation (), a) ->
+  ExprIRef.ExpressionM m (ApplyFormAnnotation (Infer.Inferred (DefM m)), a) ->
   CT m [Sugar.ExprStorePoint m a]
 injectIntoHoles holeInfo arg =
   fmap catMaybes . mapM injectArg . injectArgPositions .
   ExprUtil.addExpressionContexts (Lens._1 .~ Nothing) .
   Lens.Context id
   where
+    typeCheckOnSide ::
+      ExprIRef.ExpressionM m (Sugar.MStorePoint m a) ->
+      CT m (Maybe (ExprIRef.ExpressionM m (Sugar.MStorePoint m a)))
     typeCheckOnSide expr =
       (expr <$) <$>
       Sugar.holeLoadInferExprType
@@ -246,8 +250,9 @@ injectIntoHoles holeInfo arg =
     toOrd DependentParamAdded = 'b'
     toOrd Untouched {} = 'c'
     condition subExpr =
-      Lens.has ExprLens.exprHole subExpr &&
-      DependentParamAdded /= (subExpr ^. Expr.ePayload . contextVal . Lens._1)
+      case subExpr ^. Expr.ePayload . contextVal . Lens._1 of
+      DependentParamAdded -> False
+      _ -> Lens.has ExprLens.exprHole subExpr
     injectArg setter =
       runMaybeT . leftToJust .
       mapM_ (justToLeft . MaybeT . typeCheckOnSide . setter) $
@@ -260,7 +265,7 @@ injectIntoHoles holeInfo arg =
 
 maybeInjectArgumentExpr ::
   MonadA m => HoleInfo m ->
-  [ExprIRef.ExpressionM m (ApplyFormAnnotation ())] ->
+  [ExprIRef.ExpressionM m (ApplyFormAnnotation (Infer.Inferred (DefM m)))] ->
   CT m [Sugar.ExprStorePoint m ExprGuiM.Payload]
 maybeInjectArgumentExpr holeInfo =
   case hiMArgument holeInfo of
@@ -294,8 +299,9 @@ makeResultsList holeInfo makeWidget group =
   (Lens.mapped . Lens.mapped %~ rlPreferred .~ toPreferred) .
   typeCheckToResultsList holeInfo makeWidget baseId .
   map Sugar.ResultSeedExpression . filter (not . isHoleWrap) =<<
-  maybeInjectArgumentExpr holeInfo =<<
-  baseExprWithApplyForms holeInfo baseExpr
+  maybeInjectArgumentExpr holeInfo .
+  (Lens.mapped . Lens.mapped . Lens.mapped %~ fst) =<<
+  loadInferAndAddApplyForms holeInfo baseExpr
   where
     isHoleWrap = Lens.has (ExprLens.exprApply . Expr.applyFunc . ExprLens.exprHole)
     toPreferred

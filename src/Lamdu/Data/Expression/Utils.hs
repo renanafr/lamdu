@@ -1,5 +1,5 @@
 {-# OPTIONS -fno-warn-orphans #-}
-{-# LANGUAGE TemplateHaskell, DeriveDataTypeable, RankNTypes, NoMonomorphismRestriction #-}
+{-# LANGUAGE TemplateHaskell, DeriveDataTypeable, RankNTypes, NoMonomorphismRestriction, DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
 module Lamdu.Data.Expression.Utils
   ( makeApply
   , makePi, makeLambda, makeLam
@@ -43,6 +43,7 @@ import Control.Monad (guard)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Reader (ReaderT, runReaderT)
 import Control.Monad.Trans.State (evalState, state)
+import Data.Foldable (Foldable)
 import Data.Map (Map)
 import Data.Maybe (isJust, fromMaybe)
 import Data.Monoid (Any)
@@ -143,7 +144,7 @@ subst lens to expr
 
 data ApplyFormAnnotation a =
   Untouched a | DependentParamAdded | IndependentParamAdded
-  deriving Eq
+  deriving (Eq, Functor, Foldable, Traversable)
 
 -- Transform expression to expression applied with holes,
 -- with all different sensible levels of currying.
