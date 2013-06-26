@@ -53,12 +53,13 @@ makeRefExpr expr = Expr.Expression expr $ RefExprPayload mempty (Monoid.Any Fals
 -- also including the recursive ref to the definition.
 -- (hence not just parameters)
 -- TODO: Convert to list
-type Scope def = Map (Expr.VariableRef def) ExprRef
+type Scope = Map Guid ExprRef
 
+-- TODO: Remove unused def param
 -- Used to refer to expressions in the inference state and resume inference.
 data InferNode def = InferNode
   { nRefs :: {-# UNPACK #-}!TypedValue
-  , nScope :: Scope def
+  , nScope :: Scope
   } deriving (Typeable, Eq, Ord)
 
 -- "derive makeBinary ''InferNode" fails because of the Ord constraint

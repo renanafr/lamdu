@@ -10,11 +10,8 @@ module Lamdu.Data.Expression.Infer
   , Error(..), ErrorDetails(..)
   , RefMap, Context, ExprRef, Scope
   , Loader(..), InferActions(..)
-  , initial
-  -- Used for inferring independent expressions in an inner infer context
-  -- (See hole apply forms).
-  , newNodeWithScope
-  , createRefExpr
+  , newDefinition, emptyContext
+  , newNodeWithScope, createRefExpr
   ) where
 
 import Control.Applicative (Applicative(..), (<$>), (<$))
@@ -40,7 +37,7 @@ import Data.IntSet (IntSet)
 import Data.Map (Map)
 import Data.Maybe (isJust, mapMaybe, fromMaybe, fromJust)
 import Data.Monoid (Monoid(..))
-import Data.Traversable (traverse)
+import Data.Traversable (traverse, sequenceA)
 import Data.Typeable (Typeable)
 import Lamdu.Data.Expression.IRef (DefI)
 import Lamdu.Data.Expression.Infer.Rules (Rule(..))
@@ -150,6 +147,7 @@ newtype InferActions def m = InferActions
 data Context def = Context
   { _exprMap :: RefMap (RefData def)
   , _ruleMap :: RefMap (Rule def ExprRef)
+  , _defTypes :: Map def ExprRef
   } deriving (Typeable, Eq, Ord)
 
 data InferState def m = InferState
@@ -164,7 +162,12 @@ Lens.makeLenses ''InferState
 fmap concat . sequence $
   derive
   <$> [makeBinary, makeNFData]
-  <*> [''Context, ''ErrorDetails, ''Error, ''RuleRef, ''RefData, ''RefMap]
+  <*> [''ErrorDetails, ''Error, ''RuleRef, ''RefData, ''RefMap]
+derive makeNFData ''Context
+
+instance (Ord def, Binary def) => Binary (Context def) where
+  get = Context <$> get <*> get <*> get
+  put (Context a b c) = put a >> put b >> put c
 
 -- ExprRefMap:
 
@@ -194,28 +197,22 @@ ruleRefsAt k = ruleMap . refsAt (unRuleRef k)
 createTypedVal :: State (Context def) TypedValue
 createTypedVal = TypedValue <$> createRefExpr <*> createRefExpr
 
-newNodeWithScope :: Scope def -> State (Context def) (InferNode def)
+newNodeWithScope :: Scope -> State (Context def) (InferNode def)
 newNodeWithScope scope = (`InferNode` scope) <$> createTypedVal
 
-initial :: Ord def => Maybe def -> (Context def, InferNode def)
-initial mRecursiveDefI =
-  (context, res)
-  where
-    (res, context) =
-      (`runState` emptyContext) $ do
-        rootTv <- createTypedVal
-        let
-          scope =
-            case mRecursiveDefI of
-            Nothing -> mempty
-            Just recursiveDefI ->
-              Map.singleton (Expr.DefinitionRef recursiveDefI) (tvType rootTv)
-        return $ InferNode rootTv scope
-    emptyContext =
-      Context
-      { _exprMap = emptyRefMap
-      , _ruleMap = emptyRefMap
-      }
+newDefinition :: Ord def => def -> State (Context def) (InferNode def)
+newDefinition recDef = do
+  rootTv <- createTypedVal
+  defTypes %= Map.insert recDef (tvType rootTv)
+  return $ InferNode rootTv mempty
+
+emptyContext :: Context def
+emptyContext =
+  Context
+  { _exprMap = emptyRefMap
+  , _ruleMap = emptyRefMap
+  , _defTypes = Map.empty
+  }
 
 --- InferT:
 
@@ -240,13 +237,10 @@ derefNode context inferNode =
   Inferred
   { iValue = deref . tvVal $ nRefs inferNode
   , iType = deref . tvType $ nRefs inferNode
-  , iScope =
-    Map.fromList . mapMaybe onScopeElement . Map.toList $ nScope inferNode
+  , iScope = deref <$> nScope inferNode
   , iNode = inferNode
   }
   where
-    onScopeElement (Expr.ParameterRef guid, ref) = Just (guid, deref ref)
-    onScopeElement _ = Nothing
     toIsRestrictedPoly False = UnrestrictedPoly
     toIsRestrictedPoly True = RestrictedPoly
     deref ref =
@@ -414,37 +408,30 @@ setRefExpr mRule ref newExpr = do
 liftContextState :: MonadA m => State (Context def) a -> InferT def m a
 liftContextState = liftState . Lens.zoom sContext . toStateT
 
-exprIntoContext ::
-  (MonadA m, Ord def) => Scope def ->
-  Loaded def a ->
+-- | Represent an expression for which we've loaded all the definition
+-- types into context.
+
+-- TODO: Rename to LoadedExpr
+newtype Loaded def a = Loaded
+  { _lExpr :: Expr.Expression def a
+  } deriving (Binary, Typeable, Functor, Eq, Ord)
+
+exprAddNodes ::
+  (MonadA m, Ord def) => Scope -> Expr.Expression def a ->
   InferT def m (Expr.Expression def (InferNode def, a))
-exprIntoContext rootScope (Loaded rootExpr defTypes) = do
-  defTypesRefs <-
-    traverse defTypeIntoContext $
-    Map.mapKeys Expr.DefinitionRef defTypes
-  -- mappend prefers left, so it is critical we put rootScope
-  -- first. defTypesRefs may contain the loaded recursive defI because
-  -- upon resumption, we load without giving the root defI, so its
-  -- type does get (unnecessarily) loaded.
-  go (rootScope `mappend` defTypesRefs) =<<
-    liftContextState
-    (traverse addTypedVal rootExpr)
+exprAddNodes rootScope rootExpr = do
+  go rootScope =<<
+    liftContextState (traverse addTypedVal rootExpr)
   where
-    defTypeIntoContext defType = do
-      ref <- liftContextState createRefExpr
-      setRefExpr Nothing ref $ toRefExpression defType
-      return ref
-    addTypedVal x = fmap ((,) x) createTypedVal
+    addTypedVal x = (,) x <$> createTypedVal
     go scope (Expr.Expression body (s, createdTV)) = do
       inferNode <- toInferNode scope (void <$> body) createdTV
       newBody <-
         case body of
         Expr.BodyLam (Expr.Lambda k paramGuid paramType result) -> do
           paramTypeDone <- go scope paramType
-          let
-            paramTypeRef = tvVal . nRefs . fst $ paramTypeDone ^. Expr.ePayload
-            newScope = Map.insert (Expr.ParameterRef paramGuid) paramTypeRef scope
-          resultDone <- go newScope result
+          let paramTypeRef = tvVal . nRefs $ paramTypeDone ^. Expr.ePayload . Lens._1
+          resultDone <- go (Map.insert paramGuid paramTypeRef scope) result
           return $ ExprUtil.makeLam k paramGuid paramTypeDone resultDone
         _ -> traverse (go scope) body
       return $ Expr.Expression newBody (inferNode, s)
@@ -455,7 +442,7 @@ exprIntoContext rootScope (Loaded rootExpr defTypes) = do
           { tvType =
               fromMaybe (tvType tv) $
               body ^?
-                Expr._BodyLeaf . Expr._GetVariable .
+                ExprLens.bodyParameterRef .
                 Lens.folding (`Map.lookup` scope)
           }
       return $ InferNode typedValue scope
@@ -463,30 +450,29 @@ exprIntoContext rootScope (Loaded rootExpr defTypes) = do
 ordNub :: Ord a => [a] -> [a]
 ordNub = Set.toList . Set.fromList
 
-data Loaded def a = Loaded
-  { _lExpr :: Expr.Expression def a
-  , _lDefTypes :: Map def (Expr.Expression def ())
-  } deriving (Typeable, Functor, Eq, Ord)
--- Requires Ord instance for def, cannot derive
-instance (Binary a, Binary def, Ord def) => Binary (Loaded def a) where
-  get = Loaded <$> get <*> get
-  put (Loaded a b) = put a >> put b
-
 load ::
   (MonadA m, Ord def) =>
-  Loader def m -> Maybe def -> Expr.Expression def a -> m (Loaded def a)
-load loader mRecursiveDef expr =
-  fmap (Loaded expr) loadDefTypes
+  Loader def m -> Expr.Expression def a ->
+  StateT (Context def) m (Loaded def a)
+load loader expr = do
+  existingDefTypesLoaders <- Map.map return <$> Lens.use defTypes
+  let
+    newDefTypesLoaders =
+      Map.fromList
+      [ (def, loadType def)
+      | def <- expr ^.. ExprLens.exprDef ]
+  -- Map.union is left-biased:
+  newDefTypes <-
+    sequenceA $
+    existingDefTypesLoaders `Map.union` newDefTypesLoaders
+  defTypes .= newDefTypes
+  return $ Loaded expr
   where
-    loadDefTypes =
-      fmap Map.fromList .
-      traverse loadType . ordNub $
-      Lens.toListOf
-      ( Lens.folding ExprUtil.subExpressions
-      . ExprLens.exprDefinitionRef
-      . Lens.filtered ((/= mRecursiveDef) . Just)
-      ) expr
-    loadType defI = fmap ((,) defI) $ loadPureDefinitionType loader defI
+    loadType def = do
+      pureDefType <- lift $ loadPureDefinitionType loader def
+      ref <- createRefExpr
+      setRefExpr Nothing ref $ toRefExpression pureDefType
+      return ref
 
 -- An Independent expression has no GetDefinition of any expression
 -- except potentially the given recurse def. The given function should
@@ -519,10 +505,10 @@ inferLoaded ::
   InferActions def m -> Loaded def a ->
   InferNode def ->
   StateT (Context def) m (Expr.Expression def (Inferred def, a))
-inferLoaded actions loadedExpr node =
+inferLoaded actions (Loaded loadedExpr) node =
   State.gets . derefExpr <=<
   execInferT actions $ do
-    expr <- exprIntoContext (nScope node) loadedExpr
+    expr <- exprAddNodes (nScope node) loadedExpr
     liftState . toStateT $ do
       let
         addUnionRules f =
