@@ -92,7 +92,6 @@
         "_second": 0.4,
         "_first": 0.4
     },
-    "lambdaTextSize": 30,
     "defTypeBoxScaleFactor": {
         "_second": 0.6,
         "_first": 0.6
@@ -203,12 +202,6 @@
         "_second": 0.85,
         "_first": 0.85
     },
-    "lambdaColor": [
-        1.0,
-        0.2,
-        0.2,
-        1.0
-    ],
     "holeSearchTermScaleFactor": {
         "_second": 0.6,
         "_first": 0.6
@@ -245,7 +238,6 @@
         1.0,
         1.0
     ],
-    "rightArrowTextSize": 30,
     "foreignModuleColor": [
         1.0,
         0.3,
@@ -851,9 +843,17 @@
             }
         ]
     ],
-    "rightArrowColor": [
+    "piArrowTextSize": 30,
+    "piArrowColor": [
         1.0,
         0.2,
+        0.2,
+        1.0
+    ],
+    "lambdaArrowTextSize": 30,
+    "lambdaArrowColor": [
+        0.2,
+        1.0,
         0.2,
         1.0
     ],

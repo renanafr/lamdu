@@ -22,10 +22,9 @@ import qualified Lamdu.GUI.ExpressionEdit.GetFieldEdit as GetFieldEdit
 import qualified Lamdu.GUI.ExpressionEdit.GetParamsEdit as GetParamsEdit
 import qualified Lamdu.GUI.ExpressionEdit.GetVarEdit as GetVarEdit
 import qualified Lamdu.GUI.ExpressionEdit.HoleEdit as HoleEdit
-import qualified Lamdu.GUI.ExpressionEdit.LambdaEdit as LambdaEdit
+import qualified Lamdu.GUI.ExpressionEdit.LamEdit as LamEdit
 import qualified Lamdu.GUI.ExpressionEdit.ListEdit as ListEdit
 import qualified Lamdu.GUI.ExpressionEdit.LiteralEdit as LiteralEdit
-import qualified Lamdu.GUI.ExpressionEdit.PiEdit as PiEdit
 import qualified Lamdu.GUI.ExpressionEdit.RecordEdit as RecordEdit
 import qualified Lamdu.GUI.ExpressionEdit.TagEdit as TagEdit
 import qualified Lamdu.GUI.WidgetEnvT as WE
@@ -79,8 +78,7 @@ makeEditor parentPrecedence body =
   Sugar.BodyHole hole -> HoleEdit.make hole
   Sugar.BodyCollapsed poly -> CollapsedEdit.make parentPrecedence poly
   Sugar.BodyApply apply -> ApplyEdit.make parentPrecedence apply
-  Sugar.BodyLam lam@(Sugar.Lam Sugar.KType _ _ _) -> PiEdit.make parentPrecedence lam
-  Sugar.BodyLam lam@(Sugar.Lam Sugar.KVal _ _ _) -> LambdaEdit.make parentPrecedence lam
+  Sugar.BodyLam lam -> LamEdit.make parentPrecedence lam
   Sugar.BodyLiteralInteger integer -> LiteralEdit.makeInt integer
   Sugar.BodyAtom atom -> AtomEdit.make atom
   Sugar.BodyList list -> ListEdit.make list

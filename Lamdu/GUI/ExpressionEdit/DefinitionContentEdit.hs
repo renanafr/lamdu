@@ -25,7 +25,7 @@ import qualified Lamdu.Data.Anchors as Anchors
 import qualified Lamdu.GUI.BottleWidgets as BWidgets
 import qualified Lamdu.GUI.ExpressionGui as ExpressionGui
 import qualified Lamdu.GUI.ExpressionGui.Monad as ExprGuiM
-import qualified Lamdu.GUI.ExpressionEdit.LambdaEdit as LambdaEdit
+import qualified Lamdu.GUI.ExpressionEdit.LamEdit as LamEdit
 import qualified Lamdu.GUI.WidgetEnvT as WE
 import qualified Lamdu.GUI.WidgetIds as WidgetIds
 import qualified Lamdu.Sugar.Types as Sugar
@@ -294,7 +294,7 @@ makeNestedParams hg atParamWidgets rhs lhsId depParams params = do
       (ExpressionGui.egWidget %~
        (atParamWidgets (param ^. Sugar.fpName) .
         Widget.weakerEvents rhsJumper)) <$>
-      LambdaEdit.makeParamEdit hg prevId param
+      LamEdit.makeParamEdit hg prevId param
   (,)
     <$> traverse mkParam depParamIds
     <*> traverse mkParam paramIds

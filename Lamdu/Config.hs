@@ -107,11 +107,10 @@ data Config = Config
 
   , addWhereItemKeys :: [E.ModKey]
 
-  , lambdaColor :: Draw.Color
-  , lambdaTextSize :: Int
-
-  , rightArrowColor :: Draw.Color
-  , rightArrowTextSize :: Int
+  , piArrowColor :: Draw.Color
+  , piArrowTextSize :: Int
+  , lambdaArrowColor :: Draw.Color
+  , lambdaArrowTextSize :: Int
 
   , whereColor :: Draw.Color
   , whereScaleFactor :: Vector2 Double
