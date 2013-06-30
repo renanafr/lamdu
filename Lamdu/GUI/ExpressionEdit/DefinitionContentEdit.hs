@@ -180,11 +180,11 @@ make hg guid name content = do
       (E.Doc ["Edit", "Add where item"]) .
       toEventMapAction $ savePos >> content ^. Sugar.dAddInnermostWhereItem
     assignment =
-      ExpressionGui.hboxSpaced $
-      ExpressionGui.addBelow 0 (map ((,) 0) presentationEdits)
-      polyNameEdit :
-      paramsEdits ++
-      [ ExpressionGui.fromValueWidget equals
+      ExpressionGui.hboxSpaced
+      [ ExpressionGui.addBelow 0
+        ((,) 0 <$> presentationEdits ++ paramsEdits ^.. Lens.traversed . ExpressionGui.egWidget)
+        polyNameEdit
+      , ExpressionGui.fromValueWidget equals
       , bodyEdit
         & ExpressionGui.egWidget %~
           Widget.weakerEvents addWhereItemEventMap
@@ -291,10 +291,12 @@ makeNestedParams hg atParamWidgets rhs lhsId depParams params = do
   let
     (depParamIds, paramIds) = addPrevIds lhsId depParams params
     mkParam (prevId, param) =
-      (ExpressionGui.egWidget %~
-       (atParamWidgets (param ^. Sugar.fpName) .
-        Widget.weakerEvents rhsJumper)) <$>
-      LamEdit.makeParamEdit hg prevId param
+      param
+      & Sugar.fpType . Sugar.rPayload . Sugar.plData . ExprGuiM.plHoleGuids .~ hg
+      & LamEdit.makeParamEdit prevId
+      <&> ExpressionGui.egWidget %~
+          atParamWidgets (param ^. Sugar.fpName) .
+          Widget.weakerEvents rhsJumper
   (,)
     <$> traverse mkParam depParamIds
     <*> traverse mkParam paramIds

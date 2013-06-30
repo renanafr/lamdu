@@ -49,16 +49,37 @@ makeParamNameEdit hg name ident myId = do
 compose :: [a -> a] -> a -> a
 compose = foldr (.) id
 
+makeParamEditNoActions ::
+  MonadA m =>
+  Sugar.FuncParam Sugar.Name f (ExprGuiM.SugarExpr m) ->
+  ExprGuiM m (ExpressionGui m)
+makeParamEditNoActions param =
+  assignCursor $ do
+    paramNameEdit <-
+      makeParamNameEdit
+      (param ^. Sugar.fpType . Sugar.rPayload . Sugar.plData . ExprGuiM.plHoleGuids)
+      (param ^. Sugar.fpName) (param ^. Sugar.fpGuid) myId
+    colonLabel <- ExprGuiM.widgetEnv . BWidgets.makeLabel ":" $ Widget.toAnimId myId
+    paramTypeEdit <- ExprGuiM.makeSubexpression 1 $ param ^. Sugar.fpType
+    return $
+      ExpressionGui.hbox
+      [ ExpressionGui.fromValueWidget paramNameEdit
+      , ExpressionGui.fromValueWidget colonLabel
+      , paramTypeEdit
+      ]
+  where
+    myId = WidgetIds.fromGuid $ param ^. Sugar.fpId
+    assignGuidToMe = (`ExprGuiM.assignCursor` myId) . WidgetIds.fromGuid
+    assignCursor = compose . map assignGuidToMe $ param ^. Sugar.fpAltIds
+
 -- exported for use in definition sugaring.
 makeParamEdit ::
   MonadA m =>
-  ExprGuiM.HoleGuids -> Widget.Id ->
+  Widget.Id ->
   Sugar.FuncParam Sugar.Name m (ExprGuiM.SugarExpr m) ->
   ExprGuiM m (ExpressionGui m)
-makeParamEdit hg prevId param =
+makeParamEdit prevId param =
   assignCursor $ do
-    paramTypeEdit <- ExprGuiM.makeSubexpression 0 $ param ^. Sugar.fpType
-    paramNameEdit <- makeParamNameEdit hg name (param ^. Sugar.fpGuid) myId
     config <- ExprGuiM.widgetEnv WE.readConfig
     let
       paramAddNextEventMap =
@@ -73,16 +94,12 @@ makeParamEdit hg prevId param =
         , paramDeleteEventMap (Config.delBackwardKeys config) " backwards" (const prevId)
         , paramAddNextEventMap
         ]
-    return .
-      (ExpressionGui.egWidget %~ Widget.weakerEvents paramEventMap) .
-      ExpressionGui.addType config ExpressionGui.HorizLine myId
-      [paramTypeEdit ^. ExpressionGui.egWidget] $
-      ExpressionGui.fromValueWidget paramNameEdit
+    makeParamEditNoActions param
+      <&> ExpressionGui.egWidget %~ Widget.weakerEvents paramEventMap
   where
-    name = param ^. Sugar.fpName
+    myId = WidgetIds.fromGuid $ param ^. Sugar.fpId
     assignGuidToMe = (`ExprGuiM.assignCursor` myId) . WidgetIds.fromGuid
     assignCursor = compose . map assignGuidToMe $ param ^. Sugar.fpAltIds
-    myId = WidgetIds.fromGuid $ param ^. Sugar.fpId
     mActions = param ^. Sugar.fpMActions
     paramDeleteEventMap keys docSuffix onId =
       maybe mempty
@@ -121,21 +138,9 @@ make parentPrecedence (Sugar.Lam k param _isDep body) pl =
           Nothing -> cursor
           Just _ -> typeId
     ExprGuiM.localEnv (WE.envCursor %~ redirectCursor) $ do
-      paramTypeEdit <- ExprGuiM.makeSubexpression 1 $ param ^. Sugar.fpType
-      paramEdit <-
-        if paramUsed
-        then do
-          paramNameEdit <-
-            makeParamNameEdit
-            (param ^. Sugar.fpType . Sugar.rPayload . Sugar.plData . ExprGuiM.plHoleGuids)
-            name paramGuid paramId
-          colonLabel <- ExprGuiM.widgetEnv . BWidgets.makeLabel ":" $ Widget.toAnimId paramId
-          return $ ExpressionGui.hbox
-            [ ExpressionGui.fromValueWidget paramNameEdit
-            , ExpressionGui.fromValueWidget colonLabel
-            , paramTypeEdit
-            ]
-        else return paramTypeEdit
+      paramEdit <- if paramUsed
+        then makeParamEditNoActions param
+        else ExprGuiM.makeSubexpression 1 $ param ^. Sugar.fpType
       config <- ExprGuiM.widgetEnv WE.readConfig
       rightArrowLabel <-
         ExprGuiM.localEnv
@@ -158,7 +163,6 @@ make parentPrecedence (Sugar.Lam k param _isDep body) pl =
           [paramEdit, ExpressionGui.fromValueWidget rightArrowLabel]
       return $ ExpressionGui.hboxSpaced [paramAndArrow, resultTypeEdit]
   where
-    name = param ^. Sugar.fpName
     paramGuid = param ^. Sugar.fpGuid
     paramId = WidgetIds.fromGuid $ param ^. Sugar.fpId
     typeId =
