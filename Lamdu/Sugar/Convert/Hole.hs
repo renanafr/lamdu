@@ -192,11 +192,16 @@ mkHole exprPl = do
     & ipData .~ ()
     & Lens.sequenceOf ipStored
     & traverse mkWritableHoleActions
+  let inferredValueContext = sugarContext ^. ConvertM.scStructureInferState
   pure Hole
     { _holeMActions = mActions
     , _holeMInferred = Just HoleInferred
-      { hiInferred = iwcInferred $ exprPl ^. ipInferred
-      , hiContext = sugarContext ^. ConvertM.scHoleInferContext
+      { hiInferred =
+        -- We can assume that iPoint of a hole doesn't change and is
+        -- usable in all of the infer contexts....
+        Infer.derefNode (inferredValueContext ^. icContext) .
+        Infer.iNode . iwcInferred $ exprPl ^. ipInferred
+      , hiContext = inferredValueContext
       }
     , _holeMArg = Nothing
     }
