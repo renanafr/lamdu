@@ -1,12 +1,11 @@
 {-# LANGUAGE OverloadedStrings, RankNTypes #-}
 module Lamdu.GUI.ExpressionGui
-  ( ExpressionGui(..), egWidget
+  ( ExpressionGui(..), egWidget, egAlignment
   -- General:
   , fromValueWidget
   , scaleFromTop
   , pad
   , hbox, hboxSpaced, addBelow
-  , truncateSize
   , makeRow
   -- Lifted widgets:
   , makeLabel, makeColoredLabel
@@ -80,12 +79,6 @@ pad padding (ExpressionGui widget alignment) =
   where
     height = Widget.wSize . Lens._2
     newWidget = Widget.pad padding widget
-
-truncateSize :: Vector2 Widget.R -> ExpressionGui m -> ExpressionGui m
-truncateSize newSize (ExpressionGui widget alignment) =
-  ExpressionGui
-  (widget & Widget.wSize .~ newSize)
-  (alignment * (widget ^. Widget.wSize / newSize) ^. Lens._2)
 
 hbox :: [ExpressionGui m] -> ExpressionGui m
 hbox guis =
