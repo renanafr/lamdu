@@ -63,10 +63,10 @@ make (ParentPrecedence parentPrecedence) (Sugar.Apply func specialArgs annotated
       ]
   where
     destGuid = func ^. Sugar.rPayload . Sugar.plGuid
-    mk mPrecedence mkFuncRow =
+    mk precedence mkFuncRow =
       mkMBoxed pl
       (ParentPrecedence parentPrecedence)
-      (MyPrecedence mPrecedence)
+      (MyPrecedence precedence)
       destGuid mkFuncRow annotatedArgs myId
 
 assignCursorGuid :: MonadA m => Widget.Id -> Guid -> ExprGuiM m a -> ExprGuiM m a
