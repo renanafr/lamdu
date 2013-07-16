@@ -1,17 +1,22 @@
+import Control.Applicative
 import Control.Monad
 import Criterion.Main
-import InferExamples
+import InferPerf
+import InferTests
 
 main :: IO ()
 main = do
   putStrLn "============================================="
   putStrLn "Binary encode size:"
-  forM_ [("factorial", factorial 0), ("euler1", euler1 0)] $ \(name, size) ->
+  forM_ [ ("factorial", inferAndEncode factorialExpr 0)
+        , ("euler1", inferAndEncode euler1Expr 0)
+        , ("solveDepressedQuartic", inferAndEncode solveDepressedQuarticExpr 0)
+        ] $ \(name, size) ->
     putStrLn $ unwords ["==", name, "inferred:", show size, "bytes"]
   putStrLn "============================================="
 
   defaultMain
-    [ bench "factorial" $ whnf factorial 0
-    , bench "euler1" $ whnf euler1 0
-    , bench "solveDepressedQuartic" $ whnf solveDepressedQuartic 0
+    [ bench "factorial" $ whnf (inferAndEncode factorialExpr) 0
+    , bench "euler1" $ whnf (inferAndEncode euler1Expr) 0
+    , bench "solveDepressedQuartic" $ whnf (inferAndEncode solveDepressedQuarticExpr) 0
     ]
