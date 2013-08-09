@@ -1,10 +1,10 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Lamdu.Data.Infer.RefData
-  ( RefData(..), rdScope, rdBody, rdWasNotDirectlyTag, rdTriggers
+  ( RefDataM(..), rdScope, rdBody, rdWasNotDirectlyTag, rdTriggers, rdCallbacks
     , defaultRefData
   , Scope(..), emptyScope, scopeMap, scopeParamRefs
     , scopeNormalizeParamRefs
-  , UFExprs
+  , UFExprsM
   , fresh, freshHole
   ) where
 
@@ -25,26 +25,27 @@ import qualified Lamdu.Data.Expression as Expr
 import qualified Lamdu.Data.Expression.Lens as ExprLens
 import qualified Lamdu.Data.Infer.GuidAliases as GuidAliases
 
-type UFExprs def = UFData (TagExpr def) (RefData def)
-
+type UFExprsM m def = UFData (TagExpr def) (RefDataM m def)
 newtype Scope def = Scope (OR.RefMap (TagParam def) (ExprRef def))
 
 emptyScope :: Scope def
 emptyScope = Scope mempty
 
-data RefData def = RefData
+data RefDataM m def = RefData
   { _rdScope :: Scope def
   , _rdWasNotDirectlyTag :: Monoid.Any
   , _rdTriggers :: OR.RefMap (TagRule def) (Set (Trigger def))
+  , _rdCallbacks :: [(Trigger def, m ())]
   , _rdBody :: Expr.Body def (ExprRef def)
   }
-Lens.makeLenses ''RefData
+Lens.makeLenses ''RefDataM
 
-defaultRefData :: Scope def -> Expr.Body def (ExprRef def) -> RefData def
+defaultRefData :: Scope def -> Expr.Body def (ExprRef def) -> RefDataM m def
 defaultRefData scop body = RefData
   { _rdScope = scop
   , _rdWasNotDirectlyTag = Monoid.Any False
   , _rdTriggers = mempty
+  , _rdCallbacks = mempty
   , _rdBody = body
   }
 
@@ -59,8 +60,10 @@ scopeParamRefs = scopeMap . OR.unsafeRefMapItems . Lens._1
 scopeNormalizeParamRefs :: MonadA m => Scope def -> StateT (GuidAliases def) m (Scope def)
 scopeNormalizeParamRefs = scopeParamRefs %%~ GuidAliases.find
 
-fresh :: MonadA m => Scope def -> Expr.Body def (ExprRef def) -> StateT (UFExprs def) m (ExprRef def)
+fresh ::
+  MonadA n => Scope def -> Expr.Body def (ExprRef def) ->
+  StateT (UFExprsM m def) n (ExprRef def)
 fresh scop body = UFData.fresh $ defaultRefData scop body
 
-freshHole :: MonadA m => Scope def -> StateT (UFExprs def) m (ExprRef def)
+freshHole :: MonadA n => Scope def -> StateT (UFExprsM m def) n (ExprRef def)
 freshHole scop = fresh scop $ ExprLens.bodyHole # ()

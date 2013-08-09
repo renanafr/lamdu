@@ -3,9 +3,10 @@ module Lamdu.Data.Infer.Monad
   ( Error(..)
   , TriggeredRules(..)
   , Infer, infer
+  , Context, UFExprs, RefData
   , liftContext, liftUFExprs, liftGuidAliases, liftRuleMap
   , liftError, error
-  , ruleTrigger
+  , ruleTrigger, schedule
   ) where
 
 import Prelude hiding (error)
@@ -15,11 +16,12 @@ import Control.Monad.Trans.Class (MonadTrans(..))
 import Control.Monad.Trans.State (StateT(..))
 import Control.Monad.Trans.Writer (WriterT(..))
 import Data.Monoid (Monoid(..))
+import Data.Monoid.Applicative (ApplicativeMonoid(..))
 import Data.Store.Guid (Guid)
 import Lamdu.Data.Expression.Utils () -- Expr.Body Show instance
-import Lamdu.Data.Infer.Context (Context)
+import Lamdu.Data.Infer.Context (ContextM)
 import Lamdu.Data.Infer.GuidAliases (GuidAliases)
-import Lamdu.Data.Infer.RefData (UFExprs)
+import Lamdu.Data.Infer.RefData (UFExprsM, RefDataM)
 import Lamdu.Data.Infer.RefTags (ExprRef, TagRule, TagExpr)
 import Lamdu.Data.Infer.Rule.Types (RuleRef, RuleMap)
 import Lamdu.Data.Infer.Trigger.Types (Fired)
@@ -47,23 +49,33 @@ instance Monoid (TriggeredRules def) where
   mappend (TriggeredRules x) (TriggeredRules y) =
     TriggeredRules $ (OR.refMapUnionWith . OR.refMapUnionWith) mappend x y
 
+type RefData def = RefDataM (Infer def) def
+type UFExprs def = UFExprsM (Infer def) def
+type Context def = ContextM (Infer def) def
+
 newtype Infer def a
   = Infer
-    ( WriterT (TriggeredRules def)
-      (StateT (Context def)
-       (Either (Error def))) a )
+    ( WriterT (Maybe (ApplicativeMonoid (Infer def) ()))
+      ( WriterT (TriggeredRules def)
+        ( StateT (Context def)
+          (Either (Error def)) ) )
+      a
+    )
   deriving (Functor, Applicative, Monad)
 Lens.makeIso ''Infer
 
 ruleTrigger :: RuleRef def -> ExprRef def -> Fired def -> Infer def ()
 ruleTrigger ruleRef ref fired =
-  Infer . Writer.tell . TriggeredRules .
+  Infer . lift . Writer.tell . TriggeredRules .
   OR.refMapSingleton ruleRef $
   OR.refMapSingleton ref [fired]
 
+schedule :: Infer def () -> Infer def ()
+schedule = Infer . Writer.tell . Just . ApplicativeMonoid
+
 liftContext ::
   StateT (Context def) (Either (Error def)) a -> Infer def a
-liftContext = Infer . lift
+liftContext = Infer . lift . lift
 
 liftUFExprs ::
   StateT (UFExprs def) (Either (Error def)) a ->
@@ -77,7 +89,7 @@ liftRuleMap :: StateT (RuleMap def) (Either (Error def)) a -> Infer def a
 liftRuleMap = liftContext . Lens.zoom Context.ruleMap
 
 liftError :: Either (Error def) a -> Infer def a
-liftError = Infer . lift . lift
+liftError = Infer . lift . lift . lift
 
 error :: Error def -> Infer def a
 error = liftError . Left

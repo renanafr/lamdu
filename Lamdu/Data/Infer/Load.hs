@@ -16,7 +16,7 @@ import Control.MonadA (MonadA)
 import Data.Maybe.Utils (unsafeUnjust)
 import Data.Monoid (Monoid(..))
 import Data.Traversable (sequenceA)
-import Lamdu.Data.Infer.Context (Context)
+import Lamdu.Data.Infer.Monad (Context)
 import Lamdu.Data.Infer.RefTags (ExprRef)
 import Lamdu.Data.Infer.TypedValue (TypedValue(..), tvType)
 import qualified Control.Lens as Lens

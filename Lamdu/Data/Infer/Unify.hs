@@ -16,8 +16,8 @@ import Data.Monoid.Applicative (ApplicativeMonoid(..))
 import Data.Set (Set)
 import Data.Store.Guid (Guid)
 import Data.Traversable (sequenceA)
-import Lamdu.Data.Infer.Monad (Infer, Error(..))
-import Lamdu.Data.Infer.RefData (RefData(..), Scope(..), scopeNormalizeParamRefs)
+import Lamdu.Data.Infer.Monad (Infer, Error(..), RefData)
+import Lamdu.Data.Infer.RefData (RefDataM(..), Scope(..), scopeNormalizeParamRefs)
 import Lamdu.Data.Infer.RefTags (ExprRef, TagParam, TagRule)
 import Lamdu.Data.Infer.Trigger (Trigger)
 import System.Random (Random, random)
@@ -152,8 +152,8 @@ mergeRefData ::
   Eq def => RefData def -> RefData def ->
   WU def (RefData def)
 mergeRefData
-  (RefData aScope aWasNotDirectlyTag aTriggers aBody)
-  (RefData bScope bWasNotDirectlyTag bTriggers bBody) =
+  (RefData aScope aWasNotDirectlyTag aTriggers aCallbacks aBody)
+  (RefData bScope bWasNotDirectlyTag bTriggers bCallbacks bBody) =
   mkRefData <$> mergeScopeBodies aScope aBody bScope bBody
   where
     mkRefData (scope, mergedBody) =
@@ -161,6 +161,7 @@ mergeRefData
       { _rdScope = scope
       , _rdWasNotDirectlyTag = mappend aWasNotDirectlyTag bWasNotDirectlyTag
       , _rdTriggers = OR.refMapUnionWith mappend aTriggers bTriggers
+      , _rdCallbacks = aCallbacks ++ bCallbacks
       , _rdBody = mergedBody
       }
 

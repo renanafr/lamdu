@@ -15,10 +15,10 @@ import Control.Lens.Operators
 import Control.Monad (void)
 import Control.Monad.Trans.State (StateT)
 import Control.Monad.Trans.Writer (WriterT(..), runWriterT)
+import Data.Monoid.Applicative (ApplicativeMonoid(..))
 import Data.OpaqueRef (Ref)
-import Lamdu.Data.Infer.Context (Context)
 import Lamdu.Data.Infer.MakeTypes (makeTV)
-import Lamdu.Data.Infer.Monad (Infer, Error(..))
+import Lamdu.Data.Infer.Monad (Infer, Context, Error(..))
 import Lamdu.Data.Infer.RefData (Scope(..))
 import Lamdu.Data.Infer.TypedValue (TypedValue(..), tvVal, tvType, ScopedTypedValue(..), stvTV, stvScope)
 import qualified Control.Lens as Lens
@@ -52,19 +52,30 @@ infer ::
   (Expr.Expression (Load.LoadedDef def) (ScopedTypedValue def, a))
 infer scope expr = runInfer $ exprIntoSTV scope expr
 
+runScheduled ::
+  Infer def a ->
+  WriterT (InferM.TriggeredRules def)
+  (StateT (Context def) (Either (Error def)))
+  a
+runScheduled action = do
+  (res, scheduled) <- runWriterT $ action ^. Lens.from InferM.infer
+  case scheduled of
+    Nothing -> return ()
+    Just (ApplicativeMonoid newAction) -> runScheduled newAction
+  return res
+
 runInfer :: Eq def => Infer def a -> StateT (Context def) (Either (Error def)) a
 runInfer act = do
-  (res, rulesTriggered) <- runInferWriter act
+  (res, rulesTriggered) <- runWriterT $ runScheduled act
   go rulesTriggered
   return res
   where
-    runInferWriter = runWriterT . (^. Lens.from InferM.infer)
     go (InferM.TriggeredRules oldRuleRefs) =
       case OR.refMapMinViewWithKey oldRuleRefs of
       Nothing -> return ()
       Just ((firstRuleRef, triggers), ruleIds) ->
         go . filterRemovedRule firstRuleRef . (Lens._2 <>~ InferM.TriggeredRules ruleIds) =<<
-        runInferWriter (Rule.execute firstRuleRef triggers)
+        runWriterT (runScheduled (Rule.execute firstRuleRef triggers))
     filterRemovedRule _ (True, rules) = rules
     filterRemovedRule ruleId (False, InferM.TriggeredRules rules) =
       InferM.TriggeredRules $ rules & Lens.at ruleId .~ Nothing
