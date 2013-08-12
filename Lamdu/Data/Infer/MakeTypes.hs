@@ -91,7 +91,11 @@ makeApplyTV scope apply@(Expr.Apply func arg) = do
     applyTypeRef
 
 addTagVerification :: ExprRef def -> Infer def ()
-addTagVerification = Trigger.add Trigger.OnDirectlyTag verifyTagId
+addTagVerification =
+  Trigger.onDirectlyTag $ \isTag ->
+  if isTag
+  then return ()
+  else InferM.error $ InferM.CompositeTag ref
 
 makeGetFieldTV ::
   Eq def =>

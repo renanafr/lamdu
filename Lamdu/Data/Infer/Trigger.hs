@@ -1,6 +1,7 @@
 module Lamdu.Data.Infer.Trigger
   ( Trigger(..), Fired(..), ParameterRefEvent(..)
   , add, updateRefData
+  , onDirectlyTag
   ) where
 
 import Control.Applicative ((<$))

@@ -42,7 +42,7 @@ make valRef applicantValRef uncircumsizedValBody = do
   ruleRef <-
     InferM.liftRuleMap . Rule.new $
     Rule.RuleUncircumsize Rule.Uncircumsize
-    { Rule._uValRef = valRef
+    { Rule._buValRef = valRef
     , Rule._uApplicantValRef = applicantValRef
     , Rule._uUncircumsizedBody = uncircumsizedValBody
     }
