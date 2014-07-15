@@ -362,17 +362,18 @@ convertGetField (Expr.GetField recExpr gTag@(Expr.Tag tagGuid)) exprPl = do
     case mVar of
     Just var ->
       return $ BodyGetVar var
-    Nothing ->
+    Nothing -> do
+      tagName <- getStoredNameS tagGuid
       traverse ConvertM.convertSubexpression
-      GetField
-      { _gfRecord = recExpr
-      , _gfTag = gTag
-      }
-      <&> gfTag %~
-          ( (rPayload . plActions . Lens._Just . wrap .~ WrapNotAllowed) -- Tag cannot be wrapped
-          . SugarRemoveTypes.successfulType
-          )
-      <&> BodyGetField
+        GetField
+        { _gfRecord = recExpr
+        , _gfTag =
+            TagG
+            { _tagGuid = tagGuid
+            , _tagName = tagName
+            }
+        }
+        <&> BodyGetField
 
 removeRedundantSubExprTypes :: Expression n m a -> Expression n m a
 removeRedundantSubExprTypes =
@@ -384,10 +385,8 @@ removeRedundantSubExprTypes =
   (_BodyApply . aFunc %~ remSuc) .
   (_BodyGetField . gfRecord %~ remSuc) .
   (_BodyLam . lResultType %~ remSuc) .
-  (_BodyRecord %~
-    (fields . rfTag %~ remSuc) .
-    (Lens.filtered ((== KType) . (^. rKind)) . fields . rfExpr %~ remSuc)
-  )
+  (_BodyRecord . Lens.filtered ((== KType) . (^. rKind)) . fields . rfExpr
+    %~ remSuc)
   where
     fields = rFields . flItems . Lens.traversed
     remSuc =
@@ -537,7 +536,7 @@ rereadFieldParamTypes tagExprGuid paramTypeI f = do
   let
     mBrokenFields =
       paramType ^? Expr._VRec . ExprLens.kindedRecordFields KType .
-      (Lens.to . break) ((tagExprGuid ==) . ExprIRef.exprGuid . fst)
+      (Lens.to . break) ((Expr.Tag tagExprGuid ==) . fst)
   case mBrokenFields of
     Just (prevFields, theField : nextFields) -> f prevFields theField nextFields
     _ -> return tagExprGuid
@@ -682,29 +681,7 @@ singleConventionalParam lamProp existingParam existingParamGuid existingParamTyp
     bodyWithStored =
       fromMaybe (error "Definition body should be stored") $
       traverse (^. ipStored) body
-    addSecondParam mkFields = do
-      let existingParamField = (existingParamTag, existingParamTypeIRef)
-      (newTag, newParamField) <- newField
-      newParamTypeI <-
-        ExprIRef.newExprBody . Expr.VRec . Expr.Record KType $
-        mkFields existingParamField newParamField
-      newParamsGuid <- Transaction.newKey
-      ExprIRef.writeExprBody (Property.value lamProp) $
-        ExprUtil.makeLambda newParamsGuid newParamTypeI .
-        Property.value $ bodyWithStored ^. Expr.ePayload
-      let
-        toGetField iref = do
-          recordRef <- ExprIRef.newExprBody $ ExprLens.bodyParameterRef # newParamsGuid
-          tagRef <- ExprIRef.newExprBody existingParamTag
-          ExprIRef.writeExprBody iref $
-            Expr.VGetField Expr.GetField
-            { Expr._getFieldRecord = recordRef
-            , Expr._getFieldTag = tagRef
-            }
-      onMatchingSubexprs (toGetField . Property.value)
-        (isGetParamOf existingParamGuid) bodyWithStored
-      let lamGuid = ExprIRef.exprGuid $ Property.value lamProp
-      pure $ Guid.combine lamGuid $ newTag ^. Lens.from Expr.tag
+    addSecondParam mkFields = error "TODO: addSecondParam"
 
 emptyConventionalParams :: MonadA m => ExprIRef.ExprProperty m -> ConventionalParams m a
 emptyConventionalParams stored = ConventionalParams
@@ -790,7 +767,7 @@ addFirstFieldParam lamGuid recordI = do
     Just fields -> do
       (newTag, field) <- newField
       ExprIRef.writeExprBody recordI $
-        Expr.VRec . Expr.Record KType $ field : fields
+        Expr.VRec . Expr.Record KType $ (newTag, field) : fields
       pure $ Guid.combine lamGuid $ newTag ^. Lens.from Expr.tag
     _ -> pure $ ExprIRef.exprGuid recordI
 
