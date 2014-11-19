@@ -39,8 +39,8 @@ import qualified Lamdu.Sugar.Convert.List as ConvertList
 import qualified Lamdu.Sugar.Convert.Monad as ConvertM
 
 convert ::
-  (MonadA m, Monoid a) => V.Apply (InputExpr m a) ->
-  InputPayload m a -> ConvertM m (ExpressionU m a)
+  (MonadA m, Monoid a) => V.Apply (InputExpr Maybe m a) ->
+  InputPayload Maybe m a -> ConvertM m (ExpressionU m a)
 convert app@(V.Apply funcI argI) exprPl =
   runMatcherT $ do
     argS <- lift $ ConvertM.convertSubexpression argI
@@ -69,7 +69,7 @@ noRepetitions x = length x == Set.size (Set.fromList x)
 
 convertLabeled ::
   (MonadA m, Monoid a) =>
-  ExpressionU m a -> ExpressionU m a -> InputExpr m a -> InputPayload m a ->
+  ExpressionU m a -> ExpressionU m a -> InputExpr Maybe m a -> InputPayload Maybe m a ->
   MaybeT (ConvertM m) (ExpressionU m a)
 convertLabeled funcS argS argI exprPl = do
   record <- maybeToMPlus $ argS ^? rBody . _BodyRecord
@@ -119,7 +119,7 @@ convertLabeled funcS argS argI exprPl = do
 convertPrefix ::
   (MonadA m, Monoid a) =>
   ExpressionU m a -> ExpressionU m a ->
-  InputPayload m a -> ConvertM m (ExpressionU m a)
+  InputPayload Maybe m a -> ConvertM m (ExpressionU m a)
 convertPrefix funcS argS applyPl =
   ConvertExpr.make applyPl $ BodyApply Apply
   { _aFunc = funcS
@@ -131,7 +131,7 @@ unwrap ::
   MonadA m =>
   ExprIRef.ValIProperty m ->
   ExprIRef.ValIProperty m ->
-  InputExpr def stored ->
+  InputExpr rw def stored ->
   T m Guid
 unwrap outerP argP argExpr = do
   res <- DataOps.replace outerP (Property.value argP)
@@ -151,12 +151,12 @@ checkTypeMatch x y = do
   inferContext <- (^. ConvertM.scInferContext) <$> ConvertM.readContext
   return $ Lens.has Lens._Right $ evalStateT (Infer.run (unify x y)) inferContext
 
-ipType :: Lens.Lens' (InputPayload m a) Type
+ipType :: Lens.Lens' (InputPayload rw m a) Type
 ipType = ipInferred . Infer.plType
 
 convertAppliedHole ::
   (MonadA m, Monoid a) =>
-  InputExpr m a -> ExpressionU m a -> InputExpr m a -> InputPayload m a ->
+  InputExpr Maybe m a -> ExpressionU m a -> InputExpr Maybe m a -> InputPayload Maybe m a ->
   MaybeT (ConvertM m) (ExpressionU m a)
 convertAppliedHole funcI argS argI exprPl = do
   guard $ Lens.has ExprLens.valHole funcI

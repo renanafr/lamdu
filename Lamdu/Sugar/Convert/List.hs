@@ -35,7 +35,7 @@ import qualified Lamdu.Sugar.Convert.Expression as ConvertExpr
 import qualified Lamdu.Sugar.Convert.Monad as ConvertM
 
 nil ::
-  MonadA m => V.GlobalId -> InputPayload m a -> MaybeT (ConvertM m) (ExpressionU m a)
+  MonadA m => V.GlobalId -> InputPayload Maybe m a -> MaybeT (ConvertM m) (ExpressionU m a)
 nil globId exprPl = do
   specialFunctions <-
     lift $ (^. ConvertM.scSpecialFunctions) <$> ConvertM.readContext
@@ -61,7 +61,7 @@ mkListAddFirstItem specialFunctions =
 mkListItem ::
   (MonadA m, Monoid a) =>
   ExpressionU m a -> ExpressionU m a ->
-  InputPayload m a -> InputExpr m a -> Maybe (T m Guid) ->
+  InputPayload Maybe m a -> InputExpr Maybe m a -> Maybe (T m Guid) ->
   ListItem m (ExpressionU m a)
 mkListItem listItemExpr recordArgS exprPl tailI mAddNextItem =
   ListItem
@@ -113,7 +113,7 @@ valConsParams specialFunctions val = do
 
 cons ::
   (MonadA m, Monoid a) =>
-  V.Apply (InputExpr m a) -> ExpressionU m a -> InputPayload m a ->
+  V.Apply (InputExpr Maybe m a) -> ExpressionU m a -> InputPayload Maybe m a ->
   MaybeT (ConvertM m) (ExpressionU m a)
 cons (V.Apply funcI argI) argS exprPl = do
   specialFunctions <-

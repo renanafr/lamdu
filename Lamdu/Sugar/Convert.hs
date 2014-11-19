@@ -107,8 +107,8 @@ makeStoredNamePropertyS ::
 makeStoredNamePropertyS x = ConvertM.liftTransaction . ConvertExpr.makeStoredNameProperty $ x
 
 convertPositionalFuncParam ::
-  (MonadA m, Monoid a) => V.Lam (InputExpr m a) ->
-  InputPayload m a ->
+  (MonadA m, Monoid a) => V.Lam (InputExpr Maybe m a) ->
+  InputPayload Maybe m a ->
   ConvertM m (FuncParam MStoredName m)
 convertPositionalFuncParam (V.Lam param body) lamExprPl = do
   name <- makeStoredNamePropertyS param
@@ -132,8 +132,8 @@ convertPositionalFuncParam (V.Lam param body) lamExprPl = do
 
 convertLam ::
   (MonadA m, Monoid a) =>
-  V.Lam (InputExpr m a) ->
-  InputPayload m a -> ConvertM m (ExpressionU m a)
+  V.Lam (InputExpr Maybe m a) ->
+  InputPayload Maybe m a -> ConvertM m (ExpressionU m a)
 convertLam lam@(V.Lam paramVar result) exprPl = do
   param <- convertPositionalFuncParam lam exprPl
   resultS <- ConvertM.convertSubexpression result
@@ -159,7 +159,7 @@ convertLam lam@(V.Lam paramVar result) exprPl = do
 
 convertVar ::
   MonadA m => V.Var ->
-  InputPayload m a -> ConvertM m (ExpressionU m a)
+  InputPayload Maybe m a -> ConvertM m (ExpressionU m a)
 convertVar param exprPl = do
   recordParamsMap <- (^. ConvertM.scRecordParamsInfos) <$> ConvertM.readContext
   case Map.lookup param recordParamsMap of
@@ -188,7 +188,7 @@ jumpToDefI cp defI = IRef.guid defI <$ DataOps.newPane cp defI
 
 convertVLiteralInteger ::
   MonadA m => Integer ->
-  InputPayload m a -> ConvertM m (ExpressionU m a)
+  InputPayload Maybe m a -> ConvertM m (ExpressionU m a)
 convertVLiteralInteger i exprPl = ConvertExpr.make exprPl $ BodyLiteralInteger i
 
 convertTag :: MonadA m => Guid -> T.Tag -> ConvertM m (TagG MStoredName m)
@@ -247,7 +247,7 @@ convertTag inst tag = TagG inst tag <$> makeStoredNamePropertyS tag
 
 convertField ::
   (MonadA m, Monoid a) => Maybe (ExprIRef.ValIM m) ->
-  Guid -> T.Tag -> InputExpr m a ->
+  Guid -> T.Tag -> InputExpr Maybe m a ->
   ConvertM m (RecordField MStoredName m (ExpressionU m a))
 convertField _mIRef inst tag expr = do
   tagS <- convertTag inst tag
@@ -260,10 +260,10 @@ convertField _mIRef inst tag expr = do
     }
 
 plIRef ::
-  Lens.Traversal' (InputPayloadP Maybe m a) (ExprIRef.ValIM m)
+  Lens.Traversal' (InputPayload Maybe m a) (ExprIRef.ValIM m)
 plIRef = ipStored . Lens._Just . Property.pVal
 
-convertEmptyRecord :: MonadA m => InputPayload m a -> ConvertM m (ExpressionU m a)
+convertEmptyRecord :: MonadA m => InputPayload Maybe m a -> ConvertM m (ExpressionU m a)
 convertEmptyRecord exprPl =
   ConvertExpr.make exprPl $
   BodyRecord $ Record
@@ -272,8 +272,8 @@ convertEmptyRecord exprPl =
   }
 
 convertRecExtend ::
-  (MonadA m, Monoid a) => V.RecExtend (InputExpr m a) ->
-  InputPayload m a -> ConvertM m (ExpressionU m a)
+  (MonadA m, Monoid a) => V.RecExtend (InputExpr Maybe m a) ->
+  InputPayload Maybe m a -> ConvertM m (ExpressionU m a)
 convertRecExtend (V.RecExtend tag val rest) exprPl = do
   restS <- ConvertM.convertSubexpression rest
   fieldS <-
@@ -297,8 +297,8 @@ convertRecExtend (V.RecExtend tag val rest) exprPl = do
 
 convertGetField ::
   (MonadA m, Monoid a) =>
-  V.GetField (InputExpr m a) ->
-  InputPayload m a ->
+  V.GetField (InputExpr Maybe m a) ->
+  InputPayload Maybe m a ->
   ConvertM m (ExpressionU m a)
 convertGetField (V.GetField recExpr tag) exprPl = do
   tagParamInfos <- (^. ConvertM.scTagParamInfos) <$> ConvertM.readContext
@@ -335,7 +335,7 @@ convertGetField (V.GetField recExpr tag) exprPl = do
         <&> BodyGetField
 
 convertGlobal ::
-  MonadA m => V.GlobalId -> InputPayload m a -> ConvertM m (ExpressionU m a)
+  MonadA m => V.GlobalId -> InputPayload Maybe m a -> ConvertM m (ExpressionU m a)
 convertGlobal globalId exprPl =
   runMatcherT $ do
     justToLeft $ ConvertList.nil globalId exprPl
@@ -352,7 +352,7 @@ convertGlobal globalId exprPl =
     where
       defI = ExprIRef.defI globalId
 
-convertExpressionI :: (MonadA m, Monoid a) => InputExpr m a -> ConvertM m (ExpressionU m a)
+convertExpressionI :: (MonadA m, Monoid a) => InputExpr Maybe m a -> ConvertM m (ExpressionU m a)
 convertExpressionI ee =
   ($ ee ^. V.payload) $
   case ee ^. V.body of
@@ -387,7 +387,7 @@ data ConventionalParams m a = ConventionalParams
   , cpRecordParamsInfos :: Map V.Var (ConvertM.RecordParamsInfo m)
   , cpParams :: [FuncParam MStoredName m]
   , cpAddFirstParam :: T m Guid
-  , cpHiddenPayloads :: [InputPayload m a]
+  , cpHiddenPayloadDatas :: [a]
   }
 
 data FieldParam = FieldParam
@@ -398,7 +398,7 @@ data FieldParam = FieldParam
 mkRecordParams ::
   (MonadA m, Monoid a) =>
   ConvertM.RecordParamsInfo m -> V.Var -> [FieldParam] ->
-  InputExpr m a ->
+  InputExpr rw m a ->
   Maybe (Val (Stored m)) ->
   ConvertM m (ConventionalParams m a)
 mkRecordParams recordParamsInfo param fieldParams lambdaExprI _mBodyStored = do
@@ -411,7 +411,7 @@ mkRecordParams recordParamsInfo param fieldParams lambdaExprI _mBodyStored = do
     , cpAddFirstParam =
       error "TODO cpAddFirstParam"--  addFirstFieldParam lamGuid $
       -- fromMaybe (error "Record param type must be stored!") mParamTypeI
-    , cpHiddenPayloads = [pl]
+    , cpHiddenPayloadDatas = [pl ^. ipData]
     }
   where
     pl = lambdaExprI ^. V.payload
@@ -510,11 +510,11 @@ mkRecordParams recordParamsInfo param fieldParams lambdaExprI _mBodyStored = do
 
 convertDefinitionParams ::
   (MonadA m, Monoid a) =>
-  ConvertM.RecordParamsInfo m -> Set T.Tag -> InputExpr m a ->
+  ConvertM.RecordParamsInfo m -> Set T.Tag -> InputExpr Maybe m a ->
   ConvertM m
   ( [FuncParam MStoredName m]
   , ConventionalParams m a
-  , InputExpr m a
+  , InputExpr Maybe m a
   )
 convertDefinitionParams recordParamsInfo usedTags expr =
   case expr ^. V.body of
@@ -552,7 +552,7 @@ convertDefinitionParams recordParamsInfo usedTags expr =
 singleConventionalParam ::
   MonadA m =>
   Stored m -> FuncParam MStoredName m ->
-  V.Var ->InputExpr m a -> ConventionalParams m a
+  V.Var -> InputExpr Maybe m a -> ConventionalParams m a
 singleConventionalParam _lamProp existingParam _existingParamVar body =
   ConventionalParams
   { cpTags = mempty
@@ -563,7 +563,7 @@ singleConventionalParam _lamProp existingParam _existingParamVar body =
       addSecondParam (\old new -> [old, new])
     ]
   , cpAddFirstParam = addSecondParam (\old new -> [new, old])
-  , cpHiddenPayloads = []
+  , cpHiddenPayloadDatas = []
   }
   where
     -- _existingParamTypeIRef =
@@ -605,7 +605,7 @@ emptyConventionalParams stored = ConventionalParams
   , cpRecordParamsInfos = Map.empty
   , cpParams = []
   , cpAddFirstParam = lambdaWrap stored
-  , cpHiddenPayloads = []
+  , cpHiddenPayloadDatas = []
   }
 
 data ExprWhereItem a = ExprWhereItem
@@ -616,7 +616,7 @@ data ExprWhereItem a = ExprWhereItem
   , ewiInferredType :: Type
   }
 
-mExtractWhere :: InputExpr m a -> Maybe (ExprWhereItem (InputPayload m a))
+mExtractWhere :: InputExpr rw m a -> Maybe (ExprWhereItem (InputPayload rw m a))
 mExtractWhere expr = do
   V.Apply func arg <- expr ^? ExprLens.valApply
   V.Lam paramGuid body <- func ^? V.body . ExprLens._BAbs
@@ -631,8 +631,8 @@ mExtractWhere expr = do
 convertWhereItems ::
   (MonadA m, Monoid a) =>
   Set T.Tag ->
-  InputExpr m a ->
-  ConvertM m ([WhereItem MStoredName m (ExpressionU m a)], InputExpr m a)
+  InputExpr Maybe m a ->
+  ConvertM m ([WhereItem MStoredName m (ExpressionU m a)], InputExpr Maybe m a)
 convertWhereItems usedTags expr =
   case mExtractWhere expr of
   Nothing -> return ([], expr)
@@ -687,7 +687,7 @@ _newField = (,) <$> UniqueId.new <*> DataOps.newHole
 
 convertDefinitionContent ::
   (MonadA m, Monoid a) =>
-  ConvertM.RecordParamsInfo m -> Set T.Tag -> InputExpr m a ->
+  ConvertM.RecordParamsInfo m -> Set T.Tag -> InputExpr Maybe m a ->
   ConvertM m (DefinitionContent MStoredName m (ExpressionU m a))
 convertDefinitionContent recordParamsInfo usedTags expr = do
   (depParams, convParams, funcBody) <-
@@ -704,7 +704,7 @@ convertDefinitionContent recordParamsInfo usedTags expr = do
         , _dBody =
           bodyS
           & rPayload . plData <>~
-            cpHiddenPayloads convParams ^. Lens.traversed . ipData
+            cpHiddenPayloadDatas convParams ^. Lens.traversed
         , _dWhereItems = whereItems
         , _dAddFirstParam = cpAddFirstParam convParams
         , _dAddInnermostWhereItem =

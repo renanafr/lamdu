@@ -50,7 +50,7 @@ data Context m = Context
   , _scTagParamInfos :: Map T.Tag TagParamInfo -- tag guids
   , _scRecordParamsInfos :: Map V.Var (RecordParamsInfo m) -- param guids
   , scConvertSubexpression ::
-       forall a. Monoid a => Sugar.InputExpr m a -> ConvertM m (ExpressionU m a)
+       forall a. Monoid a => Sugar.InputExpr Maybe m a -> ConvertM m (ExpressionU m a)
   }
 Lens.makeLenses ''Context
 
@@ -73,7 +73,8 @@ codeAnchor f = f . (^. scCodeAnchors) <$> readContext
 getP :: MonadA m => Transaction.MkProperty m a -> ConvertM m a
 getP = liftTransaction . Transaction.getP
 
-convertSubexpression :: (MonadA m, Monoid a) => Sugar.InputExpr m a -> ConvertM m (ExpressionU m a)
+convertSubexpression ::
+    (MonadA m, Monoid a) => Sugar.InputExpr Maybe m a -> ConvertM m (ExpressionU m a)
 convertSubexpression exprI = do
   convertSub <- scConvertSubexpression <$> readContext
   convertSub exprI

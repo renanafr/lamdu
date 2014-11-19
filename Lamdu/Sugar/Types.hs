@@ -62,8 +62,8 @@ module Lamdu.Sugar.Types
   , Collapsed(..), cFuncGuid, cCompact, cFullExpression, cFullExprHasInfo
   , MStorePoint, ExprStorePoint
   -- Input types:
-  , InputPayloadP(..), ipGuid, ipInferred, ipStored, ipData
-  , InputPayload, InputExpr
+  , InputPayload(..), ipGuid, ipInferred, ipStored, ipData
+  , InputExpr
   , Stored
   , NameProperty(..)
     , npName, npSetName
@@ -115,17 +115,16 @@ instance Applicative ReadOnly where
   pure _ = ReadOnly
   ReadOnly <*> ReadOnly = ReadOnly
 
-data InputPayloadP rw m a
+data InputPayload rw m a
   = InputPayload
     { _ipGuid :: Guid
     , _ipInferred :: Infer.Payload
     , _ipStored :: rw (Stored m)
     , _ipData :: a -- TODO: Extract to tuple
     }
-Lens.makeLenses ''InputPayloadP
+Lens.makeLenses ''InputPayload
 
-type InputPayload m a = InputPayloadP Maybe m a
-type InputExpr m a = Val (InputPayload m a)
+type InputExpr rw m a = Val (InputPayload rw m a)
 
 data WrapAction m
   = WrapperAlready -- I'm an apply-of-hole, no need to wrap

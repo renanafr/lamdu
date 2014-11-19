@@ -49,14 +49,14 @@ import qualified System.Random as Random
 
 convert ::
   (MonadA m, Monoid a) =>
-  InputPayload m a -> ConvertM m (ExpressionU m a)
+  InputPayload Maybe m a -> ConvertM m (ExpressionU m a)
 convert exprPl =
   convertPlain exprPl
   <&> rPayload . plActions . Lens._Just . setToHole .~ AlreadyAHole
 
 convertPlain ::
   (MonadA m, Monoid a) =>
-  InputPayload m a -> ConvertM m (ExpressionU m a)
+  InputPayload Maybe m a -> ConvertM m (ExpressionU m a)
 convertPlain exprPl =
   mkHole exprPl
   <&> BodyHole
@@ -122,7 +122,7 @@ _aWhen True x = x
 
 _translateIfInferred ::
   (Guid -> Random.StdGen) ->
-  InputPayloadP rw m a ->
+  InputPayload rw m a ->
   Guid ->
   [(Guid, Guid)]
 _translateIfInferred _mkGen _aIP _bGuid = [] -- do
@@ -152,7 +152,7 @@ _translateInferred _mkGen _inferredVal _aGuid _bGuid = []
 
 idTranslations ::
   (Guid -> Random.StdGen) ->
-  Val (InputPayloadP rw m a) ->
+  Val (InputPayload rw m a) ->
   Val Guid ->
   [(Guid, Guid)]
 idTranslations _mkGen _convertedExpr _writtenExpr = []
@@ -191,7 +191,7 @@ inferOnTheSide sugarContext scope val =
 
 mkWritableHoleActions ::
   (MonadA m) =>
-  InputPayloadP Writable m () ->
+  InputPayload Writable m () ->
   ConvertM m (HoleActions MStoredName m)
 mkWritableHoleActions exprPlStored = do
   sugarContext <- ConvertM.readContext
@@ -251,7 +251,7 @@ mkHoleInferred inferred = do
 
 mkHole ::
   (MonadA m, Monoid a) =>
-  InputPayload m a -> ConvertM m (Hole MStoredName m (ExpressionU m a))
+  InputPayload Maybe m a -> ConvertM m (Hole MStoredName m (ExpressionU m a))
 mkHole exprPl = do
   mActions <-
     exprPl
@@ -351,8 +351,8 @@ writeConvertTypeChecked ::
   Val (Infer.Payload, MStorePoint m a) ->
   T m
   ( ExpressionU m a
-  , Val (InputPayloadP Writable m a)
-  , Val (InputPayloadP Writable m a)
+  , Val (InputPayload Writable m a)
+  , Val (InputPayload Writable m a)
   )
 writeConvertTypeChecked gen sugarContext holeStored inferredVal = do
   -- With the real stored guids:
@@ -390,7 +390,7 @@ writeConvertTypeChecked gen sugarContext holeStored inferredVal = do
 mkHoleResult ::
   (MonadA m, Binary a, Monoid a) =>
   ConvertM.Context m ->
-  InputPayloadP Writable m () ->
+  InputPayload Writable m () ->
   (Guid -> Random.StdGen) ->
   Val (MStorePoint m a) ->
   T m (Maybe (HoleResult MStoredName m a))

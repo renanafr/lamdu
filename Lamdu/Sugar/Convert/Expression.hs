@@ -50,7 +50,7 @@ mkActions sugarContext stored =
   }
 
 make ::
-  MonadA m => InputPayload m a -> BodyU m a -> ConvertM m (ExpressionU m a)
+  MonadA m => InputPayload Maybe m a -> BodyU m a -> ConvertM m (ExpressionU m a)
 make exprPl body = do
   sugarContext <- ConvertM.readContext
   return $ Expression body Payload
