@@ -48,11 +48,11 @@ import qualified Lamdu.Sugar.InputExpr as InputExpr
 import qualified System.Random as Random
 
 convert ::
-  (MonadA m, Monoid a) =>
-  InputPayload Maybe m a -> ConvertM m (ExpressionU m a)
+  (MonadA m, Monoid a, Traversable rw) =>
+  InputPayload rw m a -> ConvertM m (ExpressionU rw m a)
 convert exprPl =
   convertPlain exprPl
-  <&> rPayload . plActions . Lens._Just . setToHole .~ AlreadyAHole
+  <&> rPayload . plActions . Lens.traversed . setToHole .~ AlreadyAHole
 
 convertPlain ::
   (MonadA m, Monoid a, Traversable rw) =>
@@ -192,7 +192,7 @@ inferOnTheSide sugarContext scope val =
 mkWritableHoleActions ::
   (MonadA m) =>
   InputPayload Writable m () ->
-  ConvertM m (HoleActions MStoredName rw m)
+  ConvertM m (HoleActions MStoredName m)
 mkWritableHoleActions exprPlStored = do
   sugarContext <- ConvertM.readContext
   mPaste <- mkPaste $ getWritable $ exprPlStored ^. ipStored
@@ -334,7 +334,7 @@ getGlobal defI = do
   where
     errorJumpTo = error "Jump to on scope item??"
 
-getTag :: MonadA m => Guid -> T.Tag -> T m (Scope MStoredName m)
+getTag :: MonadA m => Guid -> T.Tag -> T m (Scope MStoredName rw m)
 getTag ctxGuid tag = do
   name <- ConvertExpr.makeStoredNameProperty tag
   let
@@ -350,7 +350,7 @@ writeConvertTypeChecked ::
   ConvertM.Context m -> Stored m ->
   Val (Infer.Payload, MStorePoint m a) ->
   T m
-  ( ExpressionU m a
+  ( ExpressionU Maybe m a
   , Val (InputPayload Writable m a)
   , Val (InputPayload Writable m a)
   )

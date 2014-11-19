@@ -108,12 +108,13 @@ emptyPayload = Payload
   , _plHoleGuids = emptyHoleGuids
   }
 
-type SugarExpr m = Sugar.ExpressionN Maybe m Payload
+type SugarExpr rw m = Sugar.ExpressionN rw m Payload
 
 data Askable m = Askable
   { _aSettings :: Settings
   , _aMakeSubexpression ::
-    ParentPrecedence -> SugarExpr m ->
+    forall rw. Traversable rw =>
+    ParentPrecedence -> SugarExpr rw m ->
     ExprGuiM m (ExpressionGui m)
   , _aCodeAnchors :: Anchors.CodeProps m
   }
@@ -143,7 +144,6 @@ mkPrejumpPosSaver :: MonadA m => ExprGuiM m (T m ())
 mkPrejumpPosSaver =
   DataOps.savePreJumpPosition <$> readCodeAnchors <*> widgetEnv WE.readCursor
 
--- TODO: makeSubexpresSion
 makeSubexpression ::
   MonadA m => Precedence -> SugarExpr m -> ExprGuiM m (ExpressionGui m)
 makeSubexpression parentPrecedence expr = do

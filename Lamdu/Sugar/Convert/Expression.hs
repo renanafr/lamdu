@@ -50,7 +50,7 @@ mkActions sugarContext stored =
   }
 
 make ::
-  MonadA m => InputPayload Maybe m a -> BodyU m a -> ConvertM m (ExpressionU m a)
+  (Functor rw, MonadA m) => InputPayload rw m a -> BodyU rw m a -> ConvertM m (ExpressionU rw m a)
 make exprPl body = do
   sugarContext <- ConvertM.readContext
   return $ Expression body Payload
@@ -63,7 +63,7 @@ make exprPl body = do
   -- TODO: Use to generate Sugared-Type with ids
   --   seed = mkGen 0 3 $ exprPl ^. ipGuid
 
-makeStoredNameProperty :: (UniqueId.ToGuid a, MonadA m) => a -> T m (NameProperty (Maybe String) m)
+makeStoredNameProperty :: (UniqueId.ToGuid a, MonadA m) => a -> T m (NameProperty (Maybe String) rw m)
 makeStoredNameProperty uid = do
   name <- Transaction.getP nameRef
   pure

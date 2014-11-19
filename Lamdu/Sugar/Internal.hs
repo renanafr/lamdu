@@ -10,8 +10,8 @@ import Lamdu.Sugar.Types.Internal
 import qualified Data.Store.Property as Property
 import qualified Lamdu.Expr.IRef as ExprIRef
 
-type BodyU m a = Body MStoredName m (ExpressionU m a)
-type ExpressionU m a = Expression MStoredName m a
+type BodyU rw m a = Body MStoredName rw m (ExpressionU rw m a)
+type ExpressionU rw m a = Expression MStoredName rw m a
 
 replaceWith :: MonadA m => Stored m -> Stored m -> T m Guid
 replaceWith parentP replacerP = do

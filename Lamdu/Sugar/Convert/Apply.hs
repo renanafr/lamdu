@@ -2,7 +2,7 @@ module Lamdu.Sugar.Convert.Apply
   ( convert
   ) where
 
-import Control.Applicative ((<$>))
+import Control.Applicative (Applicative, (<$>))
 import Control.Lens.Operators
 import Control.Monad (guard, unless)
 import Control.Monad.Trans.Class (lift)
@@ -13,7 +13,7 @@ import Control.MonadA (MonadA)
 import Data.Maybe.Utils (maybeToMPlus)
 import Data.Monoid (Monoid(..))
 import Data.Store.Guid (Guid)
-import Data.Traversable (traverse)
+import Data.Traversable (Traversable, traverse)
 import Lamdu.Data.Anchors (PresentationMode(..))
 import Lamdu.Expr.Type (Type)
 import Lamdu.Expr.Val (Val(..))
@@ -39,8 +39,9 @@ import qualified Lamdu.Sugar.Convert.List as ConvertList
 import qualified Lamdu.Sugar.Convert.Monad as ConvertM
 
 convert ::
-  (MonadA m, Monoid a) => V.Apply (InputExpr Maybe m a) ->
-  InputPayload Maybe m a -> ConvertM m (ExpressionU m a)
+  (MonadA m, Monoid a, MonadA rw, Traversable rw) =>
+  V.Apply (InputExpr rw m a) ->
+  InputPayload rw m a -> ConvertM m (ExpressionU rw m a)
 convert app@(V.Apply funcI argI) exprPl =
   runMatcherT $ do
     argS <- lift $ ConvertM.convertSubexpression argI
@@ -50,7 +51,7 @@ convert app@(V.Apply funcI argI) exprPl =
     justToLeft $ convertLabeled funcS argS argI exprPl
     lift $ convertPrefix funcS argS exprPl
 
-indirectDefinitionGuid :: ExpressionP name m pl -> Maybe Guid
+indirectDefinitionGuid :: ExpressionP name rw m pl -> Maybe Guid
 indirectDefinitionGuid funcS =
   case funcS ^. rBody of
   BodyGetVar gv -> Just $ gv ^. gvIdentifier
@@ -59,7 +60,7 @@ indirectDefinitionGuid funcS =
   _ -> Nothing
 
 indirectDefinitionPresentationMode ::
-  MonadA m => ExpressionP name m pl -> ConvertM m (Maybe PresentationMode)
+  MonadA m => ExpressionP name rw m pl -> ConvertM m (Maybe PresentationMode)
 indirectDefinitionPresentationMode =
   traverse (ConvertM.getP . Anchors.assocPresentationMode) .
   indirectDefinitionGuid
@@ -69,8 +70,9 @@ noRepetitions x = length x == Set.size (Set.fromList x)
 
 convertLabeled ::
   (MonadA m, Monoid a) =>
-  ExpressionU m a -> ExpressionU m a -> InputExpr Maybe m a -> InputPayload Maybe m a ->
-  MaybeT (ConvertM m) (ExpressionU m a)
+  ExpressionU rw m a -> ExpressionU rw m a ->
+  InputExpr rw m a -> InputPayload rw m a ->
+  MaybeT (ConvertM m) (ExpressionU rw m a)
 convertLabeled funcS argS argI exprPl = do
   record <- maybeToMPlus $ argS ^? rBody . _BodyRecord
   guard $ length (record ^. rItems) >= 2
@@ -91,14 +93,16 @@ convertLabeled funcS argS argI exprPl = do
       Verbose -> (NoSpecialArgs, args)
       OO -> (ObjectArg (arg0 ^. aaExpr), args1toN)
       Infix -> (InfixArgs (arg0 ^. aaExpr) (arg1 ^. aaExpr), args2toN)
+    maybeSetToInnerExpr =
+      setToInnerExprAction <$>
+      ( 
+        setToInnerExprAction
+      )
     setToInnerExprAction =
       maybe NoInnerExpr SetToInnerExpr $
       do
         stored <- exprPl ^. ipStored
-        val <-
-          case (filter (Lens.nullOf ExprLens.valHole) . map snd . Map.elems) fieldsI of
-          [x] -> Just x
-          _ -> Nothing
+        val <- singularNonHoleArg
         valStored <- traverse (^. ipStored) val
         return $
           ExprIRef.valIGuid <$>
@@ -111,15 +115,18 @@ convertLabeled funcS argS argI exprPl = do
     & lift . ConvertExpr.make exprPl
     <&> rPayload %~
       ( plData <>~ (argS ^. rPayload . plData) ) .
-      ( plActions . Lens._Just . setToInnerExpr .~ setToInnerExprAction
-      )
+      maybe id (plActions . Lens.traversed . setToInnerExpr .~) maybeSetToInnerExpr
   where
+    singularNonHoleArg =
+      case filter (Lens.nullOf ExprLens.valHole) $ map snd $ Map.elems fieldsI of
+      [x] -> Just $ traverse (^? ipStored . Lens.traversed)
+      _ -> Nothing
     (fieldsI, Val _ (V.BLeaf V.LRecEmpty)) = RecordVal.unpack argI
 
 convertPrefix ::
   (MonadA m, Monoid a) =>
-  ExpressionU m a -> ExpressionU m a ->
-  InputPayload Maybe m a -> ConvertM m (ExpressionU m a)
+  ExpressionU rw m a -> ExpressionU rw m a ->
+  InputPayload rw m a -> ConvertM m (ExpressionU rw m a)
 convertPrefix funcS argS applyPl =
   ConvertExpr.make applyPl $ BodyApply Apply
   { _aFunc = funcS
@@ -156,8 +163,8 @@ ipType = ipInferred . Infer.plType
 
 convertAppliedHole ::
   (MonadA m, Monoid a) =>
-  InputExpr Maybe m a -> ExpressionU m a -> InputExpr Maybe m a -> InputPayload Maybe m a ->
-  MaybeT (ConvertM m) (ExpressionU m a)
+  InputExpr rw m a -> ExpressionU rw m a -> InputExpr rw m a -> InputPayload rw m a ->
+  MaybeT (ConvertM m) (ExpressionU rw m a)
 convertAppliedHole funcI argS argI exprPl = do
   guard $ Lens.has ExprLens.valHole funcI
   isTypeMatch <- lift $ checkTypeMatch (argI ^. V.payload . ipType) (exprPl ^. ipType)

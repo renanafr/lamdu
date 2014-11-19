@@ -35,7 +35,7 @@ import qualified Lamdu.Sugar.Convert.Expression as ConvertExpr
 import qualified Lamdu.Sugar.Convert.Monad as ConvertM
 
 nil ::
-  MonadA m => V.GlobalId -> InputPayload Maybe m a -> MaybeT (ConvertM m) (ExpressionU m a)
+  (Functor rw, MonadA m) => V.GlobalId -> InputPayload rw m a -> MaybeT (ConvertM m) (ExpressionU rw m a)
 nil globId exprPl = do
   specialFunctions <-
     lift $ (^. ConvertM.scSpecialFunctions) <$> ConvertM.readContext
@@ -59,10 +59,10 @@ mkListAddFirstItem specialFunctions =
   fmap (ExprIRef.valIGuid . snd) . DataOps.addListItem specialFunctions
 
 mkListItem ::
-  (MonadA m, Monoid a) =>
-  ExpressionU m a -> ExpressionU m a ->
-  InputPayload Maybe m a -> InputExpr Maybe m a -> Maybe (T m Guid) ->
-  ListItem m (ExpressionU m a)
+  (MonadA m, Monoid a, Traversable rw, Monad rw) =>
+  ExpressionU rw m a -> ExpressionU rw m a ->
+  InputPayload rw m a -> InputExpr rw m a -> rw (T m Guid) ->
+  ListItem rw m (ExpressionU rw m a)
 mkListItem listItemExpr recordArgS exprPl tailI mAddNextItem =
   ListItem
   { _liExpr =
@@ -86,8 +86,8 @@ data ConsParams a = ConsParams
 getSugaredHeadTail ::
   (MonadPlus m, Monoid a) =>
   Anchors.SpecialFunctions t ->
-  ExpressionU f a ->
-  m (ConsParams (ExpressionU f a))
+  ExpressionU rw f a ->
+  m (ConsParams (ExpressionU rw f a))
 getSugaredHeadTail Anchors.SpecialFunctions{..} argS = do
   Record [headField, tailField] _ <-
     maybeToMPlus $ argS ^? rBody . _BodyRecord
@@ -112,9 +112,9 @@ valConsParams specialFunctions val = do
     (fields, recTail) = RecordVal.unpack val
 
 cons ::
-  (MonadA m, Monoid a) =>
-  V.Apply (InputExpr Maybe m a) -> ExpressionU m a -> InputPayload Maybe m a ->
-  MaybeT (ConvertM m) (ExpressionU m a)
+  (MonadA m, Monoid a, Traversable rw, MonadA rw) =>
+  V.Apply (InputExpr rw m a) -> ExpressionU rw m a -> InputPayload rw m a ->
+  MaybeT (ConvertM m) (ExpressionU rw m a)
 cons (V.Apply funcI argI) argS exprPl = do
   specialFunctions <-
     lift $ (^. ConvertM.scSpecialFunctions) <$> ConvertM.readContext

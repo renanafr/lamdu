@@ -145,12 +145,12 @@ data Actions m = Actions
   , _cut :: T m Guid
   }
 
-data Payload m a = Payload
+data Payload rw m a = Payload
   { _plInferredType :: Type
   -- This must be embedded in the expression AST and not as a separate
   -- function so that AddNames can correct the "name" here in the
   -- right context.
-  , _plActions :: Maybe (Actions m)
+  , _plActions :: rw (Actions m)
   , _plGuid :: Guid
   , _plData :: a
   } deriving (Functor, Foldable, Traversable)
@@ -161,8 +161,8 @@ type MStorePoint m a = (Maybe (TypesInternal.StorePoint (Tag m)), a)
 
 type ExprStorePoint m a = Val (MStorePoint m a)
 
-data ExpressionP name m pl = Expression
-  { _rBody :: Body name m (ExpressionP name m pl)
+data ExpressionP name rw m pl = Expression
+  { _rBody :: Body name rw m (ExpressionP name rw m pl)
   , _rPayload :: pl
   } deriving (Functor, Foldable, Traversable)
 
@@ -181,10 +181,10 @@ data Name = Name
 -- StoredName) or (Maybe String) directly adds a lot of noise.
 type MStoredName = Maybe String
 
-type Expression name m a = ExpressionP name m (Payload m a)
-type ExpressionN m a = Expression Name m a
+type Expression name rw m a = ExpressionP name rw m (Payload rw m a)
+type ExpressionN rw m a = Expression Name rw m a
 
-type BodyN m a = Body Name m (ExpressionN m a)
+type BodyN rw m a = Body Name rw m (ExpressionN rw m a)
 
 data ListItemActions m = ListItemActions
   { _itemAddNext :: T m Guid
@@ -197,9 +197,9 @@ newtype FuncParamActions m = FuncParamActions
 
 data FuncParamType = FuncParameter | FuncFieldParameter
 
-data NameProperty name m = NameProperty
+data NameProperty name (rw :: * -> *) m = NameProperty
   { _npName :: name
-  , _npSetName :: String -> T m ()
+  , _npSetName :: String -> T m () -- TODO: Wrap this in "rw"
   }
 
 -- TODO:
@@ -207,19 +207,19 @@ data NameProperty name m = NameProperty
 -- FuncParam for pi needs neither
 -- FuncParam for definition needs both
 -- So separate the types properly
-data FuncParam name m = FuncParam
+data FuncParam name rw m = FuncParam
   { -- non-unique (e.g: tag guid). Name attached here:
     _fpGuid :: Guid
   , _fpId :: Guid
   , _fpAltIds :: [Guid]
   , _fpVarKind :: FuncParamType
-  , _fpName :: NameProperty name m
+  , _fpName :: NameProperty name rw m
   , _fpInferredType :: Type
-  , _fpMActions :: Maybe (FuncParamActions m)
+  , _fpMActions :: rw (FuncParamActions m)
   }
 
-data Lam name m expr = Lam
-  { _lParam :: FuncParam name m
+data Lam name rw m expr = Lam
+  { _lParam :: FuncParam name rw m
   , _lResult :: expr
   } deriving (Functor, Foldable, Traversable)
 
@@ -231,25 +231,25 @@ data PickedResult = PickedResult
 
 data HoleResult name m a = HoleResult
   { _holeResultInferred :: Val Infer.Payload
-  , _holeResultConverted :: Expression name m a
+  , _holeResultConverted :: Expression name Maybe m a
   , _holeResultPick :: T m PickedResult
   , _holeResultHasHoles :: Bool
   } deriving (Functor, Foldable, Traversable)
 
 type ScopeItem a = (a, Val ())
 
-data Scope name m = Scope
-  { _scopeLocals    :: [ScopeItem (GetVar name m)]
-  , _scopeGlobals   :: [ScopeItem (GetVar name m)]
-  , _scopeTags      :: [(TagG name m, T.Tag)]
-  , _scopeGetParams :: [ScopeItem (GetParams name m)]
+data Scope name rw m = Scope
+  { _scopeLocals    :: [ScopeItem (GetVar name rw m)]
+  , _scopeGlobals   :: [ScopeItem (GetVar name rw m)]
+  , _scopeTags      :: [(TagG name rw m, T.Tag)]
+  , _scopeGetParams :: [ScopeItem (GetParams name rw m)]
   } deriving (Generic)
-instance Monoid (Scope name m) where
+instance Monoid (Scope name rw m) where
   mempty = def_mempty
   mappend = def_mappend
 
 data HoleActions name m = HoleActions
-  { _holeScope :: T m (Scope name m)
+  { _holeScope :: T m (Scope name Writable m)
   , -- Infer expression "on the side" (not in the hole position),
     -- but with the hole's scope.
     -- If given expression does not type check on its own, returns Nothing.
@@ -264,32 +264,32 @@ data HoleActions name m = HoleActions
   , _holePaste :: Maybe (T m Guid)
   }
 
-data Unwrap m
-  = UnwrapMAction (Maybe (T m Guid))
+data Unwrap rw m
+  = UnwrapMAction (rw (T m Guid))
   | UnwrapTypeMismatch
 
-data HoleArg m expr = HoleArg
+data HoleArg rw m expr = HoleArg
   { _haExpr :: expr
   , _haExprPresugared :: ExprStorePoint m ()
-  , _haUnwrap :: Unwrap m
+  , _haUnwrap :: Unwrap rw m
   } deriving (Functor, Foldable, Traversable)
 
 data HoleInferred name m = HoleInferred
   { _hiSuggestedValue :: Val ()
   , _hiType :: Type
   -- The Sugar Expression of the WithVarsValue
-  , _hiMakeConverted :: Random.StdGen -> T m (Expression name m ())
+  , _hiMakeConverted :: Random.StdGen -> T m (Expression name Maybe m ())
   }
 
-data Hole name m expr = Hole
-  { _holeMActions :: Maybe (HoleActions name m)
+data Hole name rw m expr = Hole
+  { _holeMActions :: rw (HoleActions name m)
   , _holeInferred :: HoleInferred name m
-  , _holeMArg :: Maybe (HoleArg m expr)
+  , _holeMArg :: Maybe (HoleArg rw m expr)
   } deriving (Functor, Foldable, Traversable)
 
-data Collapsed name m expr = Collapsed
+data Collapsed name rw m expr = Collapsed
   { _cFuncGuid :: Guid
-  , _cCompact :: GetVar name m
+  , _cCompact :: GetVar name rw m
   , _cFullExpression :: expr
     -- If the full expr has info (non-hole args) we want to leave it
     -- expanded:
@@ -297,8 +297,8 @@ data Collapsed name m expr = Collapsed
   } deriving (Functor, Foldable, Traversable)
 
 -- TODO: Do we want to store/allow-access to the implicit type params (nil's type, each cons type?)
-data ListItem m expr = ListItem
-  { _liMActions :: Maybe (ListItemActions m)
+data ListItem rw m expr = ListItem
+  { _liMActions :: rw (ListItemActions m)
   , _liExpr :: expr
   } deriving (Functor, Foldable, Traversable)
 
@@ -307,50 +307,50 @@ data ListActions m = ListActions
   , replaceNil :: T m Guid
   }
 
-data List m expr = List
-  { lValues :: [ListItem m expr]
-  , lMActions :: Maybe (ListActions m)
+data List rw m expr = List
+  { lValues :: [ListItem rw m expr]
+  , lMActions :: rw (ListActions m)
   , -- Nil guid stays consistent when adding items.
     -- (Exposed for consistent animations)
     lNilGuid :: Guid
   } deriving (Functor, Foldable, Traversable)
 
-data RecordField name m expr = RecordField
-  { _rfMItemActions :: Maybe (ListItemActions m)
-  , _rfTag :: TagG name m
+data RecordField name rw m expr = RecordField
+  { _rfMItemActions :: rw (ListItemActions m)
+  , _rfTag :: TagG name rw m
   , _rfExpr :: expr -- field type or val
   } deriving (Functor, Foldable, Traversable)
 
-data Record name m expr = Record
-  { _rItems :: [RecordField name m expr]
+data Record name rw m expr = Record
+  { _rItems :: [RecordField name rw m expr]
   , _rMAddFirstItem :: Maybe (T m Guid)
   } deriving (Functor, Foldable, Traversable)
 
-data GetField name m expr = GetField
+data GetField name rw m expr = GetField
   { _gfRecord :: expr
-  , _gfTag :: TagG name m
+  , _gfTag :: TagG name rw m
   } deriving (Functor, Foldable, Traversable)
 
 data GetVarType = GetDefinition | GetFieldParameter | GetParameter
   deriving (Eq, Ord)
 
-data GetVar name m = GetVar
+data GetVar name rw m = GetVar
   { _gvIdentifier :: Guid
-  , _gvName :: NameProperty name m
+  , _gvName :: NameProperty name rw m
   , _gvJumpTo :: T m Guid
   , _gvVarType :: GetVarType
   }
 
-data GetParams name m = GetParams
+data GetParams name rw m = GetParams
   { _gpDefGuid :: Guid
-  , _gpDefName :: NameProperty name m
+  , _gpDefName :: NameProperty name rw m
   , _gpJumpTo :: T m Guid
   }
 
-data TagG name m = TagG
+data TagG name rw m = TagG
   { _tagInstance :: Guid -- Unique across different uses of a tag
   , _tagVal :: T.Tag
-  , _tagGName :: NameProperty name m
+  , _tagGName :: NameProperty name rw m
   }
 
 data SpecialArgs expr
@@ -359,37 +359,37 @@ data SpecialArgs expr
   | InfixArgs expr expr
   deriving (Functor, Foldable, Traversable)
 
-data AnnotatedArg name m expr = AnnotatedArg
-  { _aaTag :: TagG name m
+data AnnotatedArg name rw m expr = AnnotatedArg
+  { _aaTag :: TagG name rw m
   , -- Used for animation ids consistent with record.
     _aaTagExprGuid :: Guid
   , _aaExpr :: expr
   } deriving (Functor, Foldable, Traversable)
 
-data Apply name m expr = Apply
+data Apply name rw m expr = Apply
   { _aFunc :: expr
   , _aSpecialArgs :: SpecialArgs expr
-  , _aAnnotatedArgs :: [AnnotatedArg name m expr]
+  , _aAnnotatedArgs :: [AnnotatedArg name rw m expr]
   } deriving (Functor, Foldable, Traversable)
 
-data Body name m expr
-  = BodyLam (Lam name m expr)
-  | BodyApply (Apply name m expr)
-  | BodyHole (Hole name m expr)
-  | BodyCollapsed (Collapsed name m expr)
+data Body name rw m expr
+  = BodyLam (Lam name rw m expr)
+  | BodyApply (Apply name rw m expr)
+  | BodyHole (Hole name rw m expr)
+  | BodyCollapsed (Collapsed name rw m expr)
   | BodyLiteralInteger Integer
-  | BodyList (List m expr)
-  | BodyRecord (Record name m expr)
-  | BodyGetField (GetField name m expr)
-  | BodyGetVar (GetVar name m)
-  | BodyGetParams (GetParams name m)
+  | BodyList (List rw m expr)
+  | BodyRecord (Record name rw m expr)
+  | BodyGetField (GetField name rw m expr)
+  | BodyGetVar (GetVar name rw m)
+  | BodyGetParams (GetParams name rw m)
   deriving (Functor, Foldable, Traversable)
 
-instance Show (FuncParam name m) where
+instance Show (FuncParam name rw m) where
   show fp =
     concat ["(", show (_fpGuid fp), ":", show (_fpInferredType fp), ")"]
 
-instance Show expr => Show (Body name m expr) where
+instance Show expr => Show (Body name rw m expr) where
   show (BodyLam (Lam paramType resultType)) =
     "_:" ++ show paramType ++ " -> " ++ show resultType
   show BodyHole {} = "Hole"
@@ -407,20 +407,20 @@ instance Show expr => Show (Body name m expr) where
   show BodyGetVar {} = "GetVar:TODO"
   show BodyGetParams {} = "GetParams:TODO"
 
-data WhereItem name m expr = WhereItem
-  { _wiValue :: DefinitionContent name m expr
+data WhereItem name rw m expr = WhereItem
+  { _wiValue :: DefinitionContent name rw m expr
   , _wiInferredType :: Type
   , _wiGuid :: Guid
-  , _wiName :: NameProperty name m
-  , _wiActions :: Maybe (ListItemActions m)
+  , _wiName :: NameProperty name rw m
+  , _wiActions :: rw (ListItemActions m)
   } deriving (Functor, Foldable, Traversable)
 
 -- Common data for definitions and where-items
-data DefinitionContent name m expr = DefinitionContent
-  { _dDepParams :: [FuncParam name m]
-  , _dParams :: [FuncParam name m]
+data DefinitionContent name rw m expr = DefinitionContent
+  { _dDepParams :: [FuncParam name rw m]
+  , _dParams :: [FuncParam name rw m]
   , _dBody :: expr
-  , _dWhereItems :: [WhereItem name m expr]
+  , _dWhereItems :: [WhereItem name rw m expr]
   , _dAddFirstParam :: T m Guid
   , _dAddInnermostWhereItem :: T m Guid
   } deriving (Functor, Foldable, Traversable)
@@ -435,9 +435,9 @@ data DefinitionTypeInfo m
   = DefinitionExportedTypeInfo Scheme
   | DefinitionNewType (AcceptNewType m)
 
-data DefinitionExpression name m expr = DefinitionExpression
+data DefinitionExpression name rw m expr = DefinitionExpression
   { _deTypeInfo :: DefinitionTypeInfo m
-  , _deContent :: DefinitionContent name m expr
+  , _deContent :: DefinitionContent name rw m expr
   } deriving (Functor, Foldable, Traversable)
 
 data DefinitionBuiltin m = DefinitionBuiltin
@@ -446,19 +446,19 @@ data DefinitionBuiltin m = DefinitionBuiltin
   , biType :: Definition.ExportedType
   }
 
-data DefinitionBody name m expr
-  = DefinitionBodyExpression (DefinitionExpression name m expr)
+data DefinitionBody name rw m expr
+  = DefinitionBodyExpression (DefinitionExpression name rw m expr)
   | DefinitionBodyBuiltin (DefinitionBuiltin m)
   deriving (Functor, Foldable, Traversable)
 
-data Definition name m expr = Definition
+data Definition name rw m expr = Definition
   { _drGuid :: Guid
-  , _drName :: NameProperty name m
-  , _drBody :: DefinitionBody name m expr
+  , _drName :: NameProperty name rw m
+  , _drBody :: DefinitionBody name rw m expr
   } deriving (Functor, Foldable, Traversable)
 
-type DefinitionN m a = Definition Name m (Expression Name m a)
-type DefinitionU m a = Definition MStoredName m (Expression MStoredName m a)
+type DefinitionN rw m a = Definition Name rw m (Expression Name rw m a)
+type DefinitionU rw m a = Definition MStoredName rw m (Expression MStoredName rw m a)
 
 Lens.makeLenses ''Actions
 Lens.makeLenses ''AnnotatedArg
