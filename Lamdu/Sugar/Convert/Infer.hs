@@ -68,7 +68,7 @@ loadInferInto pl val = do
 
 loadInfer ::
   MonadA m => Val (Stored m) ->
-  T m (Val (Sugar.InputPayloadP (Stored m) ()), Infer.Context)
+  T m (Val (Sugar.InputPayloadP Sugar.Writable m ()), Infer.Context)
 loadInfer val =
   loadInferScope Infer.emptyScope val
   & (`runStateT` Infer.initialContext)
@@ -79,6 +79,6 @@ loadInfer val =
     mkInputPayload (inferPl, stored) = Sugar.InputPayload
       { Sugar._ipGuid = ExprIRef.epGuid stored
       , Sugar._ipInferred = inferPl
-      , Sugar._ipStored = stored
+      , Sugar._ipStored = Sugar.Writable stored
       , Sugar._ipData = ()
       }

@@ -122,7 +122,7 @@ _aWhen True x = x
 
 _translateIfInferred ::
   (Guid -> Random.StdGen) ->
-  InputPayloadP stored a ->
+  InputPayloadP rw m a ->
   Guid ->
   [(Guid, Guid)]
 _translateIfInferred _mkGen _aIP _bGuid = [] -- do
@@ -152,7 +152,7 @@ _translateInferred _mkGen _inferredVal _aGuid _bGuid = []
 
 idTranslations ::
   (Guid -> Random.StdGen) ->
-  Val (InputPayloadP stored a) ->
+  Val (InputPayloadP rw m a) ->
   Val Guid ->
   [(Guid, Guid)]
 idTranslations _mkGen _convertedExpr _writtenExpr = []
@@ -191,11 +191,11 @@ inferOnTheSide sugarContext scope val =
 
 mkWritableHoleActions ::
   (MonadA m) =>
-  InputPayloadP (Stored m) () ->
+  InputPayloadP Writable m () ->
   ConvertM m (HoleActions MStoredName m)
 mkWritableHoleActions exprPlStored = do
   sugarContext <- ConvertM.readContext
-  mPaste <- mkPaste $ exprPlStored ^. ipStored
+  mPaste <- mkPaste $ getWritable $ exprPlStored ^. ipStored
   globals <-
     ConvertM.liftTransaction . Transaction.getP . Anchors.globals $
     sugarContext ^. ConvertM.scCodeAnchors
@@ -251,13 +251,12 @@ mkHoleInferred inferred = do
 
 mkHole ::
   (MonadA m, Monoid a) =>
-  InputPayloadP (Maybe (Stored m)) a ->
-  ConvertM m (Hole MStoredName m (ExpressionU m a))
+  InputPayload m a -> ConvertM m (Hole MStoredName m (ExpressionU m a))
 mkHole exprPl = do
   mActions <-
     exprPl
     & ipData .~ ()
-    & Lens.sequenceOf ipStored
+    & ipStored %%~ fmap Writable
     & traverse mkWritableHoleActions
   inferred <- mkHoleInferred $ exprPl ^. ipInferred
   pure Hole
@@ -352,8 +351,8 @@ writeConvertTypeChecked ::
   Val (Infer.Payload, MStorePoint m a) ->
   T m
   ( ExpressionU m a
-  , Val (InputPayloadP (Stored m) a)
-  , Val (InputPayloadP (Stored m) a)
+  , Val (InputPayloadP Writable m a)
+  , Val (InputPayloadP Writable m a)
   )
 writeConvertTypeChecked gen sugarContext holeStored inferredVal = do
   -- With the real stored guids:
@@ -370,7 +369,7 @@ writeConvertTypeChecked gen sugarContext holeStored inferredVal = do
       makeConsistentPayload <$> writtenExpr
   converted <-
     consistentExpr
-    <&> ipStored %~ Just
+    <&> ipStored %~ Just . getWritable
     & ConvertM.convertSubexpression
     & ConvertM.run sugarContext
   return
@@ -384,24 +383,26 @@ writeConvertTypeChecked gen sugarContext holeStored inferredVal = do
     toPayload (stored, (inferred, wasStored, a)) = (,) wasStored InputPayload
       { _ipGuid = ExprIRef.valIGuid $ Property.value stored
       , _ipInferred = inferred
-      , _ipStored = stored
+      , _ipStored = Writable stored
       , _ipData = a
       }
 
 mkHoleResult ::
   (MonadA m, Binary a, Monoid a) =>
   ConvertM.Context m ->
-  InputPayloadP (Stored m) () ->
+  InputPayloadP Writable m () ->
   (Guid -> Random.StdGen) ->
   Val (MStorePoint m a) ->
   T m (Maybe (HoleResult MStoredName m a))
-mkHoleResult sugarContext (InputPayload guid inferPayload stored ()) mkGen val = do
+mkHoleResult sugarContext (InputPayload guid inferPayload (Writable stored) ()) mkGen val = do
   (mResult, forkedChanges) <-
     Transaction.fork $ runMaybeT $ do
       (inferredVal, ctx) <-
         (`runStateT` (sugarContext ^. ConvertM.scInferContext)) $
         SugarInfer.loadInferInto inferPayload val
-      lift $ writeConvertTypeChecked (mkGen guid) (sugarContext & ConvertM.scInferContext .~ ctx) stored inferredVal
+      lift $
+        writeConvertTypeChecked (mkGen guid)
+        (sugarContext & ConvertM.scInferContext .~ ctx) stored inferredVal
 
   return $ mkResult (Transaction.merge forkedChanges) <$> mResult
   where
@@ -424,7 +425,7 @@ mkHoleResult sugarContext (InputPayload guid inferPayload stored ()) mkGen val =
         { _prMJumpTo = (^. V.payload . Lens._1) <$> mNextHole
         , _prIdTranslation =
           idTranslations mkGen consistentExpr
-          (ExprIRef.valIGuid . Property.value . (^. ipStored) <$> writtenExpr)
+          (ExprIRef.valIGuid . (^. ipStored . Lens._Wrapped' . Property.pVal) <$> writtenExpr)
         }
 
 randomizeNonStoredParamIds ::

@@ -1,4 +1,4 @@
-{-# LANGUAGE KindSignatures, TemplateHaskell, DeriveFunctor, DeriveFoldable, DeriveTraversable, GeneralizedNewtypeDeriving, RankNTypes, DeriveGeneric #-}
+{-# LANGUAGE KindSignatures, TemplateHaskell, DeriveFunctor, DeriveFoldable, DeriveTraversable, GeneralizedNewtypeDeriving, RankNTypes, DeriveGeneric, TypeFamilies #-}
 module Lamdu.Sugar.Types
   ( Definition(..), drName, drGuid, drBody
   , DefinitionBody(..), _DefinitionBodyExpression, _DefinitionBodyBuiltin
@@ -67,8 +67,12 @@ module Lamdu.Sugar.Types
   , Stored
   , NameProperty(..)
     , npName, npSetName
+
+  , ReadOnly(..)
+  , Writable(..)
   ) where
 
+import Control.Applicative (Applicative(..))
 import Data.Binary (Binary)
 import Data.Foldable (Foldable)
 import Data.Monoid (Monoid(..))
@@ -89,20 +93,38 @@ import qualified Lamdu.Infer as Infer
 import qualified Lamdu.Sugar.Types.Internal as TypesInternal
 import qualified System.Random as Random
 
-data InputPayloadP stored a
+-- Stored expressions are Writable and have a Writable wrapper around
+-- their mutating actions.
+
+-- Fabricated expressions (e.g: Hole suggested results) are ReadOnly
+-- and cannot be modified, so their mutating actions are wrapped in a
+-- ReadOnly.
+
+newtype Writable a = Writable { getWritable :: a } deriving (Functor, Foldable, Traversable)
+data    ReadOnly a = ReadOnly   deriving (Functor, Foldable, Traversable)
+
+instance Lens.Wrapped (Writable a) where
+  type Unwrapped (Writable a) = a
+  _Wrapped' = Lens.iso getWritable Writable
+
+instance Applicative Writable where
+  pure = Writable
+  Writable f <*> Writable x = Writable (f x)
+
+instance Applicative ReadOnly where
+  pure _ = ReadOnly
+  ReadOnly <*> ReadOnly = ReadOnly
+
+data InputPayloadP rw m a
   = InputPayload
     { _ipGuid :: Guid
     , _ipInferred :: Infer.Payload
-    , _ipStored :: stored
+    , _ipStored :: rw (Stored m)
     , _ipData :: a -- TODO: Extract to tuple
     }
 Lens.makeLenses ''InputPayloadP
 
--- "Maybe (Stored m)" is used because holes have suggested results
--- which are sugar-converted into ordinary sugar expressions, but are
--- not actually stored and do not have actions (they're read-only).
-type InputPayload m a =
-  InputPayloadP (Maybe (Stored m)) a
+type InputPayload m a = InputPayloadP Maybe m a
 type InputExpr m a = Val (InputPayload m a)
 
 data WrapAction m

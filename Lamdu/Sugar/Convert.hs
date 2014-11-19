@@ -260,7 +260,7 @@ convertField _mIRef inst tag expr = do
     }
 
 plIRef ::
-  Lens.Traversal' (InputPayloadP (Maybe (Stored m)) a) (ExprIRef.ValIM m)
+  Lens.Traversal' (InputPayloadP Maybe m a) (ExprIRef.ValIM m)
 plIRef = ipStored . Lens._Just . Property.pVal
 
 convertEmptyRecord :: MonadA m => InputPayload m a -> ConvertM m (ExpressionU m a)
@@ -749,14 +749,16 @@ convertDefIExpr ::
 convertDefIExpr cp valLoaded defI defType = do
   (valInferred, newInferContext) <- SugarInfer.loadInfer valIRefs
   let
-    addStoredGuids x = (x, ExprIRef.valIGuid . Property.value <$> x ^.. ipStored)
+    getStoredGuid x =
+      ExprIRef.valIGuid $ x ^. ipStored . Lens._Wrapped' . Property.pVal
+    addStoredGuids x = (x, [getStoredGuid x])
     guidIntoPl (pl, x) = pl & ipData %~ \() -> x
   context <- mkContext cp newInferContext
   ConvertM.run context $ do
     content <-
       valInferred
       <&> guidIntoPl . addStoredGuids
-      & traverse . ipStored %~ Just
+      & traverse . ipStored %~ Just . getWritable
       & convertDefinitionContent recordParamsInfo mempty
     return $ DefinitionBodyExpression DefinitionExpression
       { _deContent = content
