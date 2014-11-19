@@ -103,13 +103,13 @@ data ResultsList m = ResultsList
   }
 Lens.makeLenses ''ResultsList
 
-getVarsToGroup :: (Sugar.GetVar Sugar.Name m, Val ()) -> Group def
+getVarsToGroup :: (Sugar.GetVar Sugar.Name Maybe m, Val ()) -> Group def
 getVarsToGroup (getVar, expr) = sugarNameToGroup (getVar ^. Sugar.gvName . Sugar.npName) expr
 
 -- tagsToGroup :: (Sugar.TagG Sugar.Name, Val ()) -> Group def
 -- tagsToGroup (tagG, expr) = sugarNameToGroup (tagG ^. Sugar.tagName) expr
 
-getParamsToGroup :: (Sugar.GetParams Sugar.Name m, Val ()) -> Group def
+getParamsToGroup :: (Sugar.GetParams Sugar.Name Maybe m, Val ()) -> Group def
 getParamsToGroup (getParams, expr) =
   sugarNameToGroup (getParams ^. Sugar.gpDefName . Sugar.npName) expr
   & groupSearchTerms <>~ GroupAttributes ["params"] HighPrecedence

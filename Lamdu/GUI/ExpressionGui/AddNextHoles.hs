@@ -17,8 +17,8 @@ import qualified Lamdu.Sugar.Types as Sugar
 
 addToDef ::
   MonadA m =>
-  Sugar.Definition name m (Sugar.Expression name m ExprGuiM.Payload) ->
-  Sugar.Definition name m (Sugar.Expression name m ExprGuiM.Payload)
+  Sugar.Definition name m (Sugar.Expression name rw m ExprGuiM.Payload) ->
+  Sugar.Definition name m (Sugar.Expression name rw m ExprGuiM.Payload)
 addToDef def =
   def
   & Lens.mapped %~ addJumpToExprMarkers
@@ -28,12 +28,12 @@ addToDef def =
 
 -- | The exprs of the Definition that we want to include in the
 -- next/prev hole traversals (e.g: don't include the def's FuncParams)
-defExprs :: Lens.Traversal' (Sugar.Definition name m expr) expr
+defExprs :: Lens.Traversal' (Sugar.Definition name rw m expr) expr
 defExprs =
   Sugar.drBody . Sugar._DefinitionBodyExpression .
   Sugar.deContent . defContentExprs
 
-defContentExprs :: Lens.Traversal' (Sugar.DefinitionContent name m expr) expr
+defContentExprs :: Lens.Traversal' (Sugar.DefinitionContent name rw m expr) expr
 defContentExprs f defContent =
   mkDefContent
   <$> f (defContent ^. Sugar.dBody)
@@ -46,8 +46,8 @@ defContentExprs f defContent =
 
 addToExpr ::
   MonadA m =>
-  Sugar.Expression name m ExprGuiM.Payload ->
-  Sugar.Expression name m ExprGuiM.Payload
+  Sugar.Expression name rw m ExprGuiM.Payload ->
+  Sugar.Expression name rw m ExprGuiM.Payload
 addToExpr expr =
   expr
   & addJumpToExprMarkers
@@ -56,18 +56,18 @@ addToExpr expr =
   & Lens.mapped . Sugar.plData %~ snd
 
 addNextHoles ::
-  Sugar.Expression name m (Bool, ExprGuiM.Payload) ->
+  Sugar.Expression name rw m (Bool, ExprGuiM.Payload) ->
   State (Maybe Guid) (Sugar.Expression name m (Bool, ExprGuiM.Payload))
 addNextHoles = Lens.backwards Lens.traverse %%~ setGuid ExprGuiM.hgMNextHole
 
 addPrevHoles ::
-  Sugar.Expression name m (Bool, ExprGuiM.Payload) ->
-  State (Maybe Guid) (Sugar.Expression name m (Bool, ExprGuiM.Payload))
+  Sugar.Expression name rw m (Bool, ExprGuiM.Payload) ->
+  State (Maybe Guid) (Sugar.Expression name rw m (Bool, ExprGuiM.Payload))
 addPrevHoles = Lens.traverse %%~ setGuid ExprGuiM.hgMPrevHole
 
 addJumpToExprMarkers ::
-  Sugar.Expression name m ExprGuiM.Payload ->
-  Sugar.Expression name m (Bool, ExprGuiM.Payload)
+  Sugar.Expression name rw m ExprGuiM.Payload ->
+  Sugar.Expression name rw m (Bool, ExprGuiM.Payload)
 addJumpToExprMarkers expr =
   expr
   & Lens.mapped . Sugar.plData %~ (,) False
@@ -79,7 +79,7 @@ addJumpToExprMarkers expr =
       Nothing -> pl & Sugar.plData . Lens._1 .~ False
       Just _ -> pl
 
-jumpToExprPayloads :: Lens.Traversal' (Sugar.Expression name m a) a
+jumpToExprPayloads :: Lens.Traversal' (Sugar.Expression name rw m a) a
 jumpToExprPayloads f expr =
   case expr ^. Sugar.rBody of
   Sugar.BodyHole _ -> mark

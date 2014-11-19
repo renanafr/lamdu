@@ -108,7 +108,7 @@ emptyPayload = Payload
   , _plHoleGuids = emptyHoleGuids
   }
 
-type SugarExpr m = Sugar.ExpressionN m Payload
+type SugarExpr m = Sugar.ExpressionN Maybe m Payload
 
 data Askable m = Askable
   { _aSettings :: Settings

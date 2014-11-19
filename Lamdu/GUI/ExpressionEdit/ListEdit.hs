@@ -104,7 +104,7 @@ makeUnwrapped pl list myId =
 
 makeItem ::
   MonadA m =>
-  Sugar.ListItem m (ExprGuiM.SugarExpr m) ->
+  Sugar.ListItem rw m (ExprGuiM.SugarExpr m) ->
   ExprGuiM m (ExpressionGui m, ExpressionGui m)
 makeItem item = do
   config <- ExprGuiM.widgetEnv WE.readConfig

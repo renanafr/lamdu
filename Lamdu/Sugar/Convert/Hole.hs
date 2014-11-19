@@ -15,7 +15,7 @@ import Data.Maybe (listToMaybe)
 import Data.Maybe.Utils(unsafeUnjust)
 import Data.Monoid (Monoid(..))
 import Data.Store.Guid (Guid)
-import Data.Traversable (traverse)
+import Data.Traversable (Traversable, traverse)
 import Lamdu.Expr.IRef (DefIM)
 import Lamdu.Expr.Type (Type(..))
 import Lamdu.Expr.Val (Val(..))
@@ -55,13 +55,13 @@ convert exprPl =
   <&> rPayload . plActions . Lens._Just . setToHole .~ AlreadyAHole
 
 convertPlain ::
-  (MonadA m, Monoid a) =>
-  InputPayload Maybe m a -> ConvertM m (ExpressionU m a)
+  (MonadA m, Monoid a, Traversable rw) =>
+  InputPayload rw m a -> ConvertM m (ExpressionU rw m a)
 convertPlain exprPl =
   mkHole exprPl
   <&> BodyHole
   >>= ConvertExpr.make exprPl
-  <&> rPayload . plActions . Lens._Just . wrap .~ WrapNotAllowed
+  <&> rPayload . plActions . Lens.traversed . wrap .~ WrapNotAllowed
 
 mkPaste :: MonadA m => Stored m -> ConvertM m (Maybe (T m Guid))
 mkPaste exprP = do
@@ -192,7 +192,7 @@ inferOnTheSide sugarContext scope val =
 mkWritableHoleActions ::
   (MonadA m) =>
   InputPayload Writable m () ->
-  ConvertM m (HoleActions MStoredName m)
+  ConvertM m (HoleActions MStoredName rw m)
 mkWritableHoleActions exprPlStored = do
   sugarContext <- ConvertM.readContext
   mPaste <- mkPaste $ getWritable $ exprPlStored ^. ipStored
@@ -250,8 +250,8 @@ mkHoleInferred inferred = do
       }
 
 mkHole ::
-  (MonadA m, Monoid a) =>
-  InputPayload Maybe m a -> ConvertM m (Hole MStoredName m (ExpressionU m a))
+  (MonadA m, Monoid a, Traversable rw) =>
+  InputPayload rw m a -> ConvertM m (Hole MStoredName rw m (ExpressionU rw m a))
 mkHole exprPl = do
   mActions <-
     exprPl
@@ -267,7 +267,7 @@ mkHole exprPl = do
 
 getScopeElement ::
   MonadA m => ConvertM.Context m ->
-  (V.Var, Type) -> T m (Scope MStoredName m)
+  (V.Var, Type) -> T m (Scope MStoredName rw m)
 getScopeElement sugarContext (par, typeExpr) = do
   scopePar <- mkGetPar
   mconcat . (scopePar :) <$>
@@ -317,7 +317,7 @@ getScopeElement sugarContext (par, typeExpr) = do
         ] }
 
 -- TODO: Put the result in scopeGlobals in the caller, not here?
-getGlobal :: MonadA m => DefIM m -> T m (Scope MStoredName m)
+getGlobal :: MonadA m => DefIM m -> T m (Scope MStoredName rw m)
 getGlobal defI = do
   name <- ConvertExpr.makeStoredNameProperty defI
   pure mempty

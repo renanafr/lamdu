@@ -25,7 +25,7 @@ data HoleInfo m = HoleInfo
   , hiState :: Property (T m) HoleState
   , hiActions :: Sugar.HoleActions Sugar.Name m
   , hiInferred :: Sugar.HoleInferred Sugar.Name m
-  , hiMArgument :: Maybe (Sugar.HoleArg m (ExprGuiM.SugarExpr m))
+  , hiMArgument :: Maybe (Sugar.HoleArg Maybe m (ExprGuiM.SugarExpr m))
   , hiHoleGuids :: ExprGuiM.HoleGuids
   }
 

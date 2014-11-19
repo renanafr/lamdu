@@ -31,7 +31,7 @@ import qualified Lamdu.Sugar.Types as Sugar
 type T = Transaction.Transaction
 
 make ::
-  MonadA m => Bool -> HolePickers m -> Sugar.Payload m ExprGuiM.Payload ->
+  MonadA m => Bool -> HolePickers m -> Sugar.Payload Maybe m ExprGuiM.Payload ->
   ExprGuiM m (EventHandlers (T m))
 make isFocused holePickers pl =
   mconcat <$> sequenceA
@@ -63,7 +63,7 @@ mkEventMapWithPickers holePickers keys doc f =
   fmap Widget.eventResultFromCursor . f .
   fmap WidgetIds.fromGuid
 
-isExprSelected :: MonadA m => Sugar.Payload f a -> ExprGuiM m Bool
+isExprSelected :: MonadA m => Sugar.Payload Maybe f a -> ExprGuiM m Bool
 isExprSelected pl =
   ExprGuiM.widgetEnv . WE.isSubCursor . WidgetIds.fromGuid $
   pl ^. Sugar.plGuid
