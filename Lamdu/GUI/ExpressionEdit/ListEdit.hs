@@ -61,7 +61,7 @@ makeUnwrapped pl list myId =
               | Lens.has (Sugar.liExpr . Sugar.rBody . Sugar._BodyHole) item
               -> ExprGuiM.hgMNextHole .~ Just itemGuid
               where
-                itemGuid = item ^. Sugar.liExpr . Sugar.rPayload . Sugar.plGuid
+                itemGuid = item ^. Sugar.liExpr . Sugar.rPayload . Sugar.plEntityId
             _ -> id
           & ExprEventMap.jumpHolesEventMap []
         ExpressionGui.makeFocusableView firstBracketId label
@@ -90,10 +90,10 @@ makeUnwrapped pl list myId =
         return . ExpressionGui.hbox $ concat
           [[bracketOpen, firstEdit], nextEdits >>= pairToList, [bracketClose]]
   where
-    bracketsIdForAnim = WidgetIds.fromGuid $ Sugar.lNilGuid list
+    bracketsIdForAnim = WidgetIds.fromGuid $ Sugar.lNilEntityId list
     pairToList (x, y) = [x, y]
     closeBracketId = Widget.joinId myId ["close-bracket"]
-    itemId = WidgetIds.fromGuid . (^. Sugar.liExpr . Sugar.rPayload . Sugar.plGuid)
+    itemId = WidgetIds.fromGuid . (^. Sugar.liExpr . Sugar.rPayload . Sugar.plEntityId)
     actionEventMap keys doc actSelect =
       maybe mempty
       ( Widget.keysEventMapMovesCursor keys (E.Doc ["Edit", "List", doc])
@@ -136,6 +136,6 @@ makeItem item = do
     (maybe mempty (mkItemEventMap resultPickers) (item ^. Sugar.liMActions))
   where
     itemExpr = item ^. Sugar.liExpr
-    itemWidgetId = WidgetIds.fromGuid $ itemExpr ^. Sugar.rPayload . Sugar.plGuid
+    itemWidgetId = WidgetIds.fromGuid $ itemExpr ^. Sugar.rPayload . Sugar.plEntityId
     doc [] = E.Doc ["Edit", "List", "Add Next Item"]
     doc _ = E.Doc ["Edit", "List", "Pick Result and Add Next Item"]

@@ -45,7 +45,7 @@ make (ParentPrecedence parentPrecedence) (Sugar.Apply func specialArgs annotated
     overrideModifyEventMap =
       ExpressionGui.egWidget %~
       Widget.strongerEvents
-      (maybe mempty (ExprEventMap.modifyEventMap [] config (pl ^. Sugar.plGuid)) (pl ^. Sugar.plActions))
+      (maybe mempty (ExprEventMap.modifyEventMap [] config (pl ^. Sugar.plEntityId)) (pl ^. Sugar.plActions))
   case specialArgs of
     Sugar.NoSpecialArgs ->
       mk Nothing $
@@ -64,7 +64,7 @@ make (ParentPrecedence parentPrecedence) (Sugar.Apply func specialArgs annotated
       ]
   where
     isBoxed = not $ null annotatedArgs
-    destGuid = func ^. Sugar.rPayload . Sugar.plGuid
+    destGuid = func ^. Sugar.rPayload . Sugar.plEntityId
     mk mPrecedence mkFuncRow
       | isBoxed = mkBoxed pl destGuid mkFuncRow annotatedArgs myId
       | otherwise =
@@ -85,7 +85,7 @@ makeArgRows ::
   Sugar.AnnotatedArg Sugar.Name m (ExprGuiM.SugarExpr m) ->
   ExprGuiM m [[(Grid.Alignment, ExprGuiM.WidgetT m)]]
 makeArgRows arg = do
-  argTagEdit <- makeTagView (arg ^. Sugar.aaTagExprGuid) (arg ^. Sugar.aaTag)
+  argTagEdit <- makeTagView (arg ^. Sugar.aaTagExprEntityId) (arg ^. Sugar.aaTag)
   argValEdit <- ExprGuiM.makeSubexpression 0 $ arg ^. Sugar.aaExpr
   config <- ExprGuiM.widgetEnv WE.readConfig
   let

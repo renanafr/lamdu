@@ -14,7 +14,6 @@ import Data.Binary (Binary)
 import Data.Maybe (listToMaybe)
 import Data.Maybe.Utils(unsafeUnjust)
 import Data.Monoid (Monoid(..))
-import Data.Store.Guid (Guid)
 import Data.Store.Transaction (Transaction)
 import Data.Traversable (traverse)
 import Lamdu.Expr.IRef (DefIM)
@@ -29,7 +28,6 @@ import System.Random.Utils (genFromHashable)
 import qualified Control.Lens as Lens
 import qualified Data.Foldable as Foldable
 import qualified Data.Map as Map
-import qualified Data.Store.Guid as Guid
 import qualified Data.Store.Property as Property
 import qualified Data.Store.Transaction as Transaction
 import qualified Lamdu.Data.Anchors as Anchors
@@ -45,6 +43,7 @@ import qualified Lamdu.Sugar.Convert.Expression as ConvertExpr
 import qualified Lamdu.Sugar.Convert.Infer as SugarInfer
 import qualified Lamdu.Sugar.Convert.Monad as ConvertM
 import qualified Lamdu.Sugar.InputExpr as InputExpr
+import qualified Lamdu.Sugar.Internal.EntityId as EntityId
 import qualified System.Random as Random
 
 type T = Transaction
@@ -65,7 +64,8 @@ convertPlain exprPl =
   >>= ConvertExpr.make exprPl
   <&> rPayload . plActions . Lens._Just . wrap .~ WrapNotAllowed
 
-mkPaste :: MonadA m => ExprIRef.ValIProperty m -> ConvertM m (Maybe (T m Guid))
+mkPaste ::
+  MonadA m => ExprIRef.ValIProperty m -> ConvertM m (Maybe (T m EntityId))
 mkPaste exprP = do
   clipboardsP <- ConvertM.codeAnchor Anchors.clipboards
   clipboards <- ConvertM.getP clipboardsP
@@ -86,7 +86,7 @@ mkPaste exprP = do
       Transaction.deleteIRef clipDefI
       ~() <- popClip
       ~() <- replacer clip
-      return $ ExprIRef.valIGuid clip
+      return $ EntityId.ofValI clip
 
 inferOnTheSide ::
   (MonadA m) =>
@@ -118,10 +118,11 @@ mkWritableHoleActions exprPlStored = do
       mconcat . concat <$> sequence
       [ mapM (getScopeElement sugarContext) $ Map.toList $ Infer.scopeToTypeMap inferredScope
       , mapM getGlobal globals
-      , mapM (getTag (exprPlStored ^. ipGuid)) tags
+      , mapM (getTag (exprPlStored ^. ipEntityId)) tags
       ]
     , _holeInferExprType = inferOnTheSide sugarContext inferredScope
     , holeResult = mkHoleResult sugarContext exprPlStored
+    , _holeGuid = UniqueId.toGuid $ ExprIRef.unValI $ Property.value $ exprPlStored ^. ipStored
     }
   where
     inferred = exprPlStored ^. ipInferred
@@ -142,7 +143,7 @@ mkHoleInferred inferred = do
     mkConverted gen =
       inferredIVal
       <&> mkInputPayload . fst
-      & InputExpr.randomizeExprAndParams gen
+      & EntityId.randomizeExprAndParams gen
       & ConvertM.convertSubexpression
       & ConvertM.run (sugarContext & ConvertM.scInferContext .~ newCtx)
   pure HoleInferred
@@ -151,8 +152,8 @@ mkHoleInferred inferred = do
     , _hiMakeConverted = mkConverted
     }
   where
-    mkInputPayload i guid = InputPayload
-      { _ipGuid = guid
+    mkInputPayload i entityId = InputPayload
+      { _ipEntityId = entityId
       , _ipInferred = i
       , _ipStored = Nothing
       , _ipData = ()
@@ -239,12 +240,12 @@ getGlobal defI = do
   where
     errorJumpTo = error "Jump to on scope item??"
 
-getTag :: MonadA m => Guid -> T.Tag -> T m (Scope MStoredName m)
-getTag ctxGuid tag = do
+getTag :: MonadA m => EntityId -> T.Tag -> T m (Scope MStoredName m)
+getTag ctxEntityId tag = do
   name <- ConvertExpr.makeStoredNameProperty tag
   let
     tagG = TagG
-      { _tagInstance = Guid.combine ctxGuid $ UniqueId.toGuid tag
+      { _tagInstance = EntityId.augment (show (UniqueId.toGuid tag)) ctxEntityId
       , _tagVal = tag
       , _tagGName = name
       }
@@ -267,11 +268,12 @@ writeConvertTypeChecked gen sugarContext holeStored inferredVal = do
     writeExprMStored (Property.value holeStored) (intoStorePoint <$> inferredVal)
   let
     -- Replace the guids with consistently fake ones
-    makeConsistentPayload (False, pl) guid = pl & ipGuid .~ guid
+    makeConsistentPayload (False, pl) entityId = pl & ipEntityId .~ entityId
     makeConsistentPayload (True, pl) _ = pl
     consistentExpr =
-      InputExpr.randomizeExprAndParams gen $
-      makeConsistentPayload <$> writtenExpr
+      writtenExpr
+      <&> makeConsistentPayload
+      & EntityId.randomizeExprAndParams gen
   converted <-
     consistentExpr
     <&> ipStored %~ Just
@@ -286,7 +288,7 @@ writeConvertTypeChecked gen sugarContext holeStored inferredVal = do
     intoStorePoint (inferred, (mStorePoint, a)) =
       (mStorePoint, (inferred, Lens.has Lens._Just mStorePoint, a))
     toPayload (stored, (inferred, wasStored, a)) = (,) wasStored InputPayload
-      { _ipGuid = ExprIRef.valIGuid $ Property.value stored
+      { _ipEntityId = EntityId.ofValI $ Property.value stored
       , _ipInferred = inferred
       , _ipStored = stored
       , _ipData = a
@@ -296,7 +298,7 @@ mkHoleResult ::
   (MonadA m, Binary a, Monoid a) =>
   ConvertM.Context m ->
   InputPayloadP (ExprIRef.ValIProperty m) () ->
-  (Guid -> Random.StdGen) ->
+  (EntityId -> Random.StdGen) ->
   Val (MStorePoint m a) ->
   T m (Maybe (HoleResult MStoredName m a))
 mkHoleResult sugarContext (InputPayload guid inferPayload stored ()) mkGen val = do
@@ -321,7 +323,7 @@ mkHoleResult sugarContext (InputPayload guid inferPayload stored ()) mkGen val =
           inferredExpr = (^. ipInferred) <$> fWrittenExpr
     mkPickedResult _consistentExpr writtenExpr = do
       let
-        f payload = (payload ^. ipGuid, payload ^. ipInferred)
+        f payload = (payload ^. ipEntityId, payload ^. ipInferred)
         mNextHole = listToMaybe . orderedInnerHoles $ f <$> writtenExpr
       pure
         PickedResult
@@ -335,8 +337,8 @@ randomizeNonStoredParamIds gen =
   InputExpr.randomizeParamIdsG id nameGen Map.empty $ \_ _ pl -> pl
   where
     nameGen = InputExpr.onNgMakeName f $ InputExpr.randomNameGen gen
-    f n _        prevGuid (Just _, _) = (prevGuid, n)
-    f _ prevFunc prevGuid pl@(Nothing, _) = prevFunc prevGuid pl
+    f n _        prevEntityId (Just _, _) = (prevEntityId, n)
+    f _ prevFunc prevEntityId pl@(Nothing, _) = prevFunc prevEntityId pl
 
 writeExprMStored ::
   MonadA m =>

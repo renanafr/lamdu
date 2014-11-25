@@ -206,7 +206,7 @@ jumpToRHS keys (rhsDoc, rhs) = do
     Widget.keysEventMapMovesCursor keys (E.Doc ["Navigation", "Jump to " ++ rhsDoc]) $
       rhsId <$ savePos
   where
-    rhsId = WidgetIds.fromGuid $ rhs ^. Sugar.rPayload . Sugar.plGuid
+    rhsId = WidgetIds.fromGuid $ rhs ^. Sugar.rPayload . Sugar.plEntityId
 
 makeResultEdit
   :: MonadA m

@@ -102,4 +102,4 @@ make parentPrecedence (Sugar.Lam param body) pl =
       , bodyEdit
       ]
   where
-    bodyId = WidgetIds.fromGuid $ body ^. Sugar.rPayload . Sugar.plGuid
+    bodyId = WidgetIds.fromGuid $ body ^. Sugar.rPayload . Sugar.plEntityId

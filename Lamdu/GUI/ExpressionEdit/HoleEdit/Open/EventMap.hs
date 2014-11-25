@@ -152,7 +152,7 @@ make pl holeInfo mShownResult = do
   let
     applyOp =
       actionsEventMap $
-      ExprEventMap.applyOperatorEventMap [] $ pl ^. Sugar.plGuid
+      ExprEventMap.applyOperatorEventMap [] $ pl ^. Sugar.plEntityId
     close = closeEventMap holeInfo
     cut = actionsEventMap $ ExprEventMap.cutEventMap config
     paste = pasteEventMap config holeInfo

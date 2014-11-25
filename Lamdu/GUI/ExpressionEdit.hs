@@ -56,8 +56,8 @@ make parentPrecedence sExpr = assignCursor $ do
       | otherwise = id
     Sugar.Expression body pl = sExpr
     ExprGuiM.Payload guids isInjecteds _holeGuids = pl ^. Sugar.plData
-    exprHiddenGuids = List.delete (pl ^. Sugar.plGuid) guids
-    myId = WidgetIds.fromGuid $ pl ^. Sugar.plGuid
+    exprHiddenGuids = List.delete (pl ^. Sugar.plEntityId) guids
+    myId = WidgetIds.fromGuid $ pl ^. Sugar.plEntityId
     maybeShrink
       | or isInjecteds = shrinkIfHigherThanLine
       | otherwise = return

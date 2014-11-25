@@ -223,12 +223,12 @@ postProcessSugar expr =
   & Sugar.rPayload . Sugar.plActions .~ Nothing
 
 toPayload :: HoleResults.SugarExprPl -> ExprGuiM.Payload
-toPayload (ExprGuiM.StoredGuids guids, ExprGuiM.Injected injected) =
+toPayload (ExprGuiM.StoredEntityIds entityIds, ExprGuiM.Injected injected) =
   ExprGuiM.Payload
-  { ExprGuiM._plStoredGuids = guids
+  { ExprGuiM._plStoredEntityIds = entityIds
   , ExprGuiM._plInjected = injected
   -- filled by AddNextHoles above
-  , ExprGuiM._plHoleGuids = ExprGuiM.emptyHoleGuids
+  , ExprGuiM._plHoleEntityIds = ExprGuiM.emptyHoleEntityIds
   }
 
 -- asNewLabelScaleFactor :: Fractional a => a

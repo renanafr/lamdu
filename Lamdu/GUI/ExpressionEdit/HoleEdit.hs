@@ -66,4 +66,4 @@ tryOpenHole hole pl myId = do
     , hiMArgument = hole ^. Sugar.holeMArg
     }
   where
-    guid = pl ^. Sugar.plGuid
+    guid = pl ^. Sugar.plEntityId
