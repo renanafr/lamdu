@@ -3,7 +3,6 @@ module Lamdu.GUI.CodeEdit (make, Env(..)) where
 
 import Control.Applicative ((<$>))
 import Control.Lens.Operators
-import Control.Monad.Trans.Class (lift)
 import Control.MonadA (MonadA)
 import Data.List (intersperse)
 import Data.List.Utils (enumerate, insertAt, removeAt)
@@ -19,6 +18,7 @@ import Lamdu.GUI.CodeEdit.Settings (Settings)
 import Lamdu.GUI.WidgetEnvT (WidgetEnvT)
 import qualified Control.Lens as Lens
 import qualified Data.Store.IRef as IRef
+import qualified Data.Store.Property as Property
 import qualified Data.Store.Transaction as Transaction
 import qualified Graphics.DrawingCombinators as Draw
 import qualified Graphics.UI.Bottle.Animation as Anim
@@ -90,14 +90,13 @@ makeClipboardsEdit env clipboards = do
     else BWidgets.makeTextViewWidget "Clipboards:" ["clipboards title"]
   return . Box.vboxAlign 0 $ clipboardTitle : clipboardsEdits
 
-getClipboards :: MonadA m => Anchors.CodeProps m -> T m [DefIM m]
-getClipboards = Transaction.getP . Anchors.clipboards
+getClipboards :: MonadA m => Anchors.CodeProps m -> [DefIM m]
+getClipboards = Property.value . Anchors.clipboards
 
 make :: MonadA m => Env m -> Guid -> WidgetEnvT (T m) (Widget (T m))
 make env rootGuid = do
-  prop <- lift $ Anchors.panes (codeProps env) ^. Transaction.mkProperty
-  (sugarPanes, sugarClipboards) <-
-    (,) (makePanes prop rootGuid) <$> (lift . getClipboards) (codeProps env)
+  let sugarPanes = makePanes (Anchors.panes (codeProps env)) rootGuid
+  let sugarClipboards = getClipboards (codeProps env)
   panesEdit <- makePanesEdit env sugarPanes $ WidgetIds.fromGuid rootGuid
   clipboardsEdit <- makeClipboardsEdit env sugarClipboards
   return $
@@ -132,7 +131,6 @@ makePanesEdit env panes myId = do
         definitionEdits <- traverse makePaneEdit panes
         return . Box.vboxAlign 0 $ intersperse (Spacer.makeWidget 50) definitionEdits
 
-  mJumpBack <- lift . DataOps.jumpBack $ codeProps env
   newDefinition <- DefinitionEdit.makeNewDefinition $ codeProps env
   let
     panesEventMap =
@@ -141,7 +139,7 @@ makePanesEdit env panes myId = do
         (E.Doc ["Edit", "New definition"]) newDefinition
       , maybe mempty
         (Widget.keysEventMapMovesCursor (Config.previousCursorKeys config)
-         (E.Doc ["Navigation", "Go back"])) mJumpBack
+         (E.Doc ["Navigation", "Go back"])) $ DataOps.jumpBack $ codeProps env
       ]
   return $ Widget.weakerEvents panesEventMap panesWidget
 

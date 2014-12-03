@@ -315,19 +315,16 @@ convertExpressionI ee =
   V.BLeaf V.LRecEmpty -> convertEmptyRecord
 
 mkContext ::
-  MonadA m =>
-  Anchors.Code (Transaction.MkProperty m) (Tag m) ->
-  Infer.Context -> T m (Context m)
-mkContext cp inferContext = do
-  specialFunctions <- Transaction.getP $ Anchors.specialFunctions cp
-  return Context
-    { _scInferContext = inferContext
-    , _scCodeAnchors = cp
-    , _scSpecialFunctions = specialFunctions
-    , _scTagParamInfos = mempty
-    , _scRecordParamsInfos = mempty
-    , scConvertSubexpression = convertExpressionI
-    }
+  MonadA m => Anchors.CodeProps m -> Infer.Context -> Context m
+mkContext cp inferContext =
+  Context
+  { _scInferContext = inferContext
+  , _scCodeAnchors = cp
+  , _scSpecialFunctions = Property.value $ Anchors.specialFunctions cp
+  , _scTagParamInfos = mempty
+  , _scRecordParamsInfos = mempty
+  , scConvertSubexpression = convertExpressionI
+  }
 
 data ConventionalParams m a = ConventionalParams
   { cpTags :: Set T.Tag
@@ -691,8 +688,7 @@ convertDefIExpr ::
 convertDefIExpr cp valLoaded defI defType = do
   (valInferred, newInferContext) <- SugarInfer.loadInfer valIRefs
   let addStoredEntityIds x = x & ipData .~ (EntityId.ofValI . Property.value <$> x ^.. ipStored . Lens._Just)
-  context <- mkContext cp newInferContext
-  ConvertM.run context $ do
+  ConvertM.run (mkContext cp newInferContext) $ do
     content <-
       valInferred
       <&> addStoredEntityIds

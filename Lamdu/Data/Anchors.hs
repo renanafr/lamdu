@@ -3,13 +3,14 @@ module Lamdu.Data.Anchors
   ( Code(..), onCode
   , Revision(..), onRevision
   , Pane, makePane
-  , CodeProps, RevisionProps
+  , CodeMkProps, CodeProps, RevisionProps
   , assocNameRef
   , PresentationMode(..)
   , assocPresentationMode
   , SpecialFunctions(..)
   ) where
 
+import Control.Applicative ((<$>), Applicative(..))
 import Control.MonadA (MonadA)
 import Data.Binary (Binary)
 import Data.ByteString.Char8 ()
@@ -47,9 +48,12 @@ data Code f t = Code
   , postCursor :: f WidgetId.Id
   , tags :: f [T.Tag]
   }
-onCode :: (forall a. Binary a => f a -> g a) -> Code f t -> Code g t
+onCode ::
+  Applicative m =>
+  (forall a. Binary a => f a -> m (g a)) ->
+  Code f t -> m (Code g t)
 onCode f (Code x0 x1 x2 x3 x4 x5 x6 x7) =
-  Code (f x0) (f x1) (f x2) (f x3) (f x4) (f x5) (f x6) (f x7)
+  Code <$> f x0 <*> f x1 <*> f x2 <*> f x3 <*> f x4 <*> f x5 <*> f x6 <*> f x7
 
 data Revision f t = Revision
   { branches :: f [Branch t]
@@ -62,7 +66,8 @@ onRevision :: (forall a. Binary a => f a -> g a) -> Revision f t -> Revision g t
 onRevision f (Revision x0 x1 x2 x3 x4) =
   Revision (f x0) (f x1) (f x2) (f x3) (f x4)
 
-type CodeProps m = Code (MkProperty m) (Tag m)
+type CodeMkProps m = Code (MkProperty m) (Tag m)
+type CodeProps m = Code (Transaction.Property m) (Tag m)
 type RevisionProps m = Revision (MkProperty m) (Tag m)
 
 makePane :: DefI t -> Pane t

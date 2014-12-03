@@ -6,6 +6,7 @@ import Control.Concurrent (threadDelay, forkIO, ThreadId)
 import Control.Concurrent.MVar
 import Control.Lens.Operators
 import Control.Monad (unless, forever)
+import Control.Monad.Trans.Class (MonadTrans(..))
 import Data.IORef
 import Data.MRUMemo (memoIO)
 import Data.Monoid (Monoid(..))
@@ -325,7 +326,15 @@ makeRootWidget config settings style dbToIO size cursor = do
     codeEdit <-
       (fmap . Widget.atEvents) (VersionControl.runEvent cursor) .
       WE.mapWidgetEnvT VersionControl.runAction $
-      CodeEdit.make env rootGuid
+      do
+        codeProps <- lift DbLayout.codeProps
+        let
+          env = CodeEdit.Env
+            { CodeEdit.codeProps = codeProps
+            , CodeEdit.totalSize = size
+            , CodeEdit.settings = settings
+            }
+        CodeEdit.make env rootGuid
     branchGui <- VersionControlGUI.make id size actions codeEdit
     let
       quitEventMap =
@@ -334,11 +343,6 @@ makeRootWidget config settings style dbToIO size cursor = do
       Widget.atEvents (dbToIO . (attachCursor =<<)) $
       Widget.strongerEvents quitEventMap branchGui
   where
-    env = CodeEdit.Env
-      { CodeEdit.codeProps = DbLayout.codeProps
-      , CodeEdit.totalSize = size
-      , CodeEdit.settings = settings
-      }
     attachCursor eventResult = do
       maybe (return ()) (Transaction.setP (DbLayout.cursor DbLayout.revisionProps)) .
         Monoid.getLast $ eventResult ^. Widget.eCursor

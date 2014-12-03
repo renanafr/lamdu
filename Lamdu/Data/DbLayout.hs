@@ -3,14 +3,18 @@
 module Lamdu.Data.DbLayout
   ( DbM, runDbTransaction
   , ViewM, runViewTransaction
-  , CodeProps, codeProps, codeIRefs
+  , CodeMkProps, codeMkProps
+  , CodeProps, codeProps
+  , codeIRefs
   , RevisionProps, revisionProps, revisionIRefs
   , module Lamdu.Data.Anchors
   ) where
 
 import Control.Applicative (Applicative)
+import Control.Lens.Operators
 import Control.Monad.IO.Class (MonadIO)
 import Data.ByteString.Char8 ()
+import Data.Functor.Identity (Identity(..))
 import Data.Store.Db (Db)
 import Data.Store.IRef (IRef, Tag)
 import Data.Store.Rev.View (View)
@@ -57,11 +61,18 @@ revisionIRefs = Revision
   , view = IRef.anchor "view"
   }
 
+type CodeMkProps = Anchors.CodeMkProps ViewM
 type CodeProps = Anchors.CodeProps ViewM
 type RevisionProps = Anchors.RevisionProps DbM
 
-codeProps :: CodeProps
-codeProps = Anchors.onCode Transaction.mkPropertyFromIRef codeIRefs
+codeMkProps :: CodeMkProps
+codeMkProps =
+  runIdentity $
+  Anchors.onCode (Identity . Transaction.mkPropertyFromIRef) codeIRefs
+
+codeProps :: T ViewM CodeProps
+codeProps =
+  Anchors.onCode (^. Transaction.mkProperty) codeMkProps
 
 revisionProps :: RevisionProps
 revisionProps = Anchors.onRevision Transaction.mkPropertyFromIRef revisionIRefs

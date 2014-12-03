@@ -17,7 +17,7 @@ import Control.Lens.Operators
 import Control.Monad (when)
 import Control.MonadA (MonadA)
 import Data.Store.IRef (Tag)
-import Data.Store.Transaction (Transaction, getP, setP, modP)
+import Data.Store.Transaction (Transaction, setP)
 import Lamdu.CharClassification (operatorChars)
 import Lamdu.Data.Anchors (PresentationMode(..))
 import Lamdu.Expr.IRef (DefIM, ValTree(..))
@@ -121,22 +121,20 @@ addListItem Anchors.SpecialFunctions {..} exprP = do
 newPane :: MonadA m => Anchors.CodeProps m -> DefIM m -> T m ()
 newPane codeProps defI = do
   let panesProp = Anchors.panes codeProps
-  panes <- getP panesProp
-  when (defI `notElem` panes) $
-    setP panesProp $ Anchors.makePane defI : panes
+  when (defI `notElem` Property.value panesProp) $
+    Property.set panesProp $ Anchors.makePane defI : Property.value panesProp
 
 savePreJumpPosition :: MonadA m => Anchors.CodeProps m -> WidgetId.Id -> T m ()
-savePreJumpPosition codeProps pos = modP (Anchors.preJumps codeProps) $ (pos :) . take 19
+savePreJumpPosition codeProps pos =
+  Property.pureModify (Anchors.preJumps codeProps) $ (pos :) . take 19
 
-jumpBack :: MonadA m => Anchors.CodeProps m -> T m (Maybe (T m WidgetId.Id))
-jumpBack codeProps = do
-  preJumps <- getP (Anchors.preJumps codeProps)
-  return $
-    case preJumps of
-    [] -> Nothing
-    (j:js) -> Just $ do
-      setP (Anchors.preJumps codeProps) js
-      return j
+jumpBack :: MonadA m => Anchors.CodeProps m -> Maybe (T m WidgetId.Id)
+jumpBack codeProps =
+  case Property.value (Anchors.preJumps codeProps) of
+  [] -> Nothing
+  (j:js) -> Just $ do
+    Property.set (Anchors.preJumps codeProps) js
+    return j
 
 isInfix :: String -> Bool
 isInfix x = not (null x) && all (`elem` operatorChars) x
@@ -161,7 +159,7 @@ newPublicDefinition codeProps name = do
   defI <-
     newDefinition name (presentationModeOfName name) =<<
     ((`Definition.Body` Definition.NoExportedType) . Definition.ContentExpr <$> newHole)
-  modP (Anchors.globals codeProps) (defI :)
+  Property.pureModify (Anchors.globals codeProps) (defI :)
   return defI
 
 newClipboard ::
@@ -169,10 +167,10 @@ newClipboard ::
   ExprIRef.ValI (Tag m) ->
   T m (DefIM m)
 newClipboard codeProps expr = do
-  len <- length <$> getP (Anchors.clipboards codeProps)
+  let len = length $ Property.value (Anchors.clipboards codeProps)
   let def = Definition.Body (Definition.ContentExpr expr) Definition.NoExportedType
   defI <- newDefinition ("clipboard" ++ show len) OO def
-  modP (Anchors.clipboards codeProps) (defI:)
+  Property.pureModify (Anchors.clipboards codeProps) (defI:)
   return defI
 
 makeNewTag :: MonadA m => String -> T m T.Tag
@@ -184,5 +182,5 @@ makeNewTag name = do
 makeNewPublicTag :: MonadA m => Anchors.CodeProps m -> String -> T m T.Tag
 makeNewPublicTag codeProps name = do
   tag <- makeNewTag name
-  modP (Anchors.tags codeProps) (tag :)
+  Property.pureModify (Anchors.tags codeProps) (tag :)
   return tag

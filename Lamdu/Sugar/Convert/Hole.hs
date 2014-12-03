@@ -73,12 +73,11 @@ mkPaste ::
   MonadA m => ExprIRef.ValIProperty m -> ConvertM m (Maybe (T m EntityId))
 mkPaste exprP = do
   clipboardsP <- ConvertM.codeAnchor Anchors.clipboards
-  clipboards <- ConvertM.getP clipboardsP
   let
     mClipPop =
-      case clipboards of
+      case Property.value clipboardsP of
       [] -> Nothing
-      (clip : clips) -> Just (clip, Transaction.setP clipboardsP clips)
+      (clip : clips) -> Just (clip, Property.set clipboardsP clips)
   return $ doPaste (Property.set exprP) <$> mClipPop
   where
     doPaste replacer (clipDefI, popClip) = do
@@ -114,9 +113,8 @@ mkWritableHoleActions ::
 mkWritableHoleActions exprPl stored = do
   sugarContext <- ConvertM.readContext
   mPaste <- mkPaste stored
-  globals <-
-    ConvertM.liftTransaction . Transaction.getP . Anchors.globals $
-    sugarContext ^. ConvertM.scCodeAnchors
+  let globals =
+        Property.value $ Anchors.globals $ sugarContext ^. ConvertM.scCodeAnchors
   let inferredScope = inferred ^. Infer.plScope
   pure HoleActions
     { _holePaste = mPaste

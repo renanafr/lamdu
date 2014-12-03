@@ -26,10 +26,10 @@ type TDB = Transaction DbM
 type TV = Transaction DbLayout.ViewM
 
 revProp :: (DbLayout.RevisionProps -> a) -> a
-revProp x = x DbLayout.revisionProps
+revProp k = k DbLayout.revisionProps
 
-codeProp :: (DbLayout.CodeProps -> a) -> a
-codeProp x = x DbLayout.codeProps
+codeMkProp :: (DbLayout.CodeMkProps -> a) -> a
+codeMkProp k = k DbLayout.codeMkProps
 
 setCurrentBranch :: View (Tag DbM) -> Branch (Tag DbM) -> TDB ()
 setCurrentBranch view branch = do
@@ -66,8 +66,8 @@ runEvent preCursor eventHandler = do
     eventResult <- eventHandler
     isEmpty <- Transaction.isEmpty
     unless isEmpty $ do
-      setP (codeProp DbLayout.preCursor) preCursor
-      setP (codeProp DbLayout.postCursor) .
+      setP (codeMkProp DbLayout.preCursor) preCursor
+      setP (codeMkProp DbLayout.postCursor) .
         fromMaybe preCursor . Monoid.getLast $ eventResult ^. Widget.eCursor
     return (eventResult, isEmpty)
   unless isEmpty $ setP (revProp DbLayout.redos) []
@@ -84,7 +84,7 @@ makeActions = do
   let
     toDb = DbLayout.runViewTransaction view
     undo parentVersion = do
-      preCursor <- toDb . getP $ codeProp DbLayout.preCursor
+      preCursor <- toDb . getP $ codeMkProp DbLayout.preCursor
       View.move view parentVersion
       modP (revProp DbLayout.redos) (curVersion :)
       return preCursor
@@ -92,7 +92,7 @@ makeActions = do
     mkRedo (redo : redos) = Just $ do
       setP (revProp DbLayout.redos) redos
       View.move view redo
-      toDb . getP $ codeProp DbLayout.postCursor
+      toDb . getP $ codeMkProp DbLayout.postCursor
   return Actions
     { Actions.branches = branches
     , Actions.currentBranch = currentBranch
