@@ -40,10 +40,11 @@ import qualified Lamdu.Data.Definition as Definition
 import qualified Lamdu.Expr.IRef as ExprIRef
 import qualified Lamdu.Expr.Lens as ExprLens
 import qualified Lamdu.Expr.Pure as P
-import qualified Lamdu.Expr.UniqueId as UniqueId
 import qualified Lamdu.Expr.Type as T
+import qualified Lamdu.Expr.UniqueId as UniqueId
 import qualified Lamdu.Expr.Val as V
 import qualified Lamdu.Infer as Infer
+import qualified Lamdu.Infer.Memo as InferMemo
 import qualified Lamdu.Sugar.Convert.Expression as ConvertExpr
 import qualified Lamdu.Sugar.Convert.Infer as SugarInfer
 import qualified Lamdu.Sugar.Convert.Monad as ConvertM
@@ -95,12 +96,12 @@ mkPaste exprP = do
 
 inferOnTheSide ::
   (MonadA m) =>
-  ConvertM.Context m -> Infer.Scope -> Val () ->
+  InferMemo.Memo -> ConvertM.Context m -> Infer.Scope -> Val () ->
   T m (Maybe Type)
 -- token represents the given holeInferContext
-inferOnTheSide sugarContext scope val =
+inferOnTheSide inferMemo sugarContext scope val =
   runMaybeT . (`evalStateT` (sugarContext ^. ConvertM.scInferContext)) $
-  SugarInfer.loadInferScope scope val
+  SugarInfer.loadInferScope inferMemo scope val
   <&> (^. V.payload . Lens._1 . Infer.plType)
 
 -- Value for holeResultNewTag
@@ -113,6 +114,7 @@ mkWritableHoleActions ::
   ConvertM m (HoleActions Guid m)
 mkWritableHoleActions exprPl stored = do
   sugarContext <- ConvertM.readContext
+  let inferMemo = sugarContext ^. ConvertM.scInferMemo
   mPaste <- mkPaste stored
   globals <-
     ConvertM.liftTransaction . Transaction.getP . Anchors.globals $
@@ -125,7 +127,7 @@ mkWritableHoleActions exprPl stored = do
       [ mapM (getScopeElement sugarContext) $ Map.toList $ Infer.scopeToTypeMap inferredScope
       , mapM getGlobal globals
       ]
-    , _holeInferExprType = inferOnTheSide sugarContext inferredScope
+    , _holeInferExprType = inferOnTheSide inferMemo sugarContext inferredScope
     , holeResult = mkHoleResult sugarContext exprPl stored
     , _holeResultNewTag = newTag
     , _holeGuid = UniqueId.toGuid $ ExprIRef.unValI $ Property.value stored
@@ -148,7 +150,9 @@ mkHoleSuggested :: MonadA m => EntityId -> Infer.Payload -> ConvertM m (HoleSugg
 mkHoleSuggested holeEntityId inferred = do
   sugarContext <- ConvertM.readContext
   (inferredIVal, newCtx) <-
-    SugarInfer.loadInferScope (inferred ^. Infer.plScope) suggestedVal
+    SugarInfer.loadInferScope
+    (sugarContext ^. ConvertM.scInferMemo)
+    (inferred ^. Infer.plScope) suggestedVal
     & (`runStateT` (sugarContext ^. ConvertM.scInferContext))
     & runMaybeT
     <&> unsafeUnjust "Inference on inferred val must succeed"
@@ -357,7 +361,7 @@ mkHoleResult sugarContext exprPl stored val =
   runMaybeT $ do
     (inferredVal, ctx) <-
       (`runStateT` (sugarContext ^. ConvertM.scInferContext))
-      (SugarInfer.loadInferInto (exprPl ^. ipInferred) val)
+      (SugarInfer.loadInferInto (sugarContext ^. ConvertM.scInferMemo) (exprPl ^. ipInferred) val)
     let newSugarContext = sugarContext & ConvertM.scInferContext .~ ctx
     ((fConverted, fConsistentExpr, fWrittenExpr), forkedChanges) <-
       lift $ Transaction.fork $

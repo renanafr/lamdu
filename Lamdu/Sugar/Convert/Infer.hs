@@ -1,4 +1,3 @@
-{-# LANGUAGE ConstraintKinds #-}
 module Lamdu.Sugar.Convert.Infer
   ( ExpressionSetter
 
@@ -19,6 +18,7 @@ import Data.Store.Transaction (Transaction)
 import Lamdu.Expr.Val (Val(..))
 import Lamdu.Infer (Infer)
 import Lamdu.Infer.Load (Loader(..))
+import Lamdu.Infer.Memo (Memo)
 import Lamdu.Infer.Unify (unify)
 import Lamdu.Infer.Update (updateInferredVal)
 import qualified Control.Lens as Lens
@@ -27,9 +27,10 @@ import qualified Data.Store.Property as Property
 import qualified Data.Store.Transaction as Transaction
 import qualified Lamdu.Data.Definition as Definition
 import qualified Lamdu.Expr.IRef as ExprIRef
+import qualified Lamdu.Expr.Load as Load
 import qualified Lamdu.Expr.Val as V
 import qualified Lamdu.Infer as Infer
-import qualified Lamdu.Infer.Load as InferLoad
+import qualified Lamdu.Infer.Memo as InferMemo
 import qualified Lamdu.Sugar.Internal.EntityId as EntityId
 import qualified Lamdu.Sugar.Types as Sugar
 
@@ -57,28 +58,29 @@ liftInfer :: Monad m => Infer a -> M m a
 liftInfer = mapStateT eitherToMaybeT . Infer.run
 
 loadInferScope ::
-  MonadA m => Infer.Scope -> Val a -> M m (Val (Infer.Payload, a))
-loadInferScope scope val = do
-  inferAction <- lift $ InferLoad.loadInfer loader scope val
+  MonadA m => Memo -> Infer.Scope -> Val a -> M m (Val (Infer.Payload, a))
+loadInferScope memo scope val = do
+  inferAction <- lift $ InferMemo.loadInfer loader memo scope val
   liftInfer inferAction
 
 loadInferInto ::
-  MonadA m => Infer.Payload -> Val a -> M m (Val (Infer.Payload, a))
-loadInferInto pl val = do
-  inferredVal <- loadInferScope (pl ^. Infer.plScope) val
+  MonadA m => Memo -> Infer.Payload -> Val a -> M m (Val (Infer.Payload, a))
+loadInferInto memo pl val = do
+  inferredVal <- loadInferScope memo (pl ^. Infer.plScope) val
   let inferredType = inferredVal ^. V.payload . _1 . Infer.plType
   liftInfer $ do
     unify inferredType (pl ^. Infer.plType)
     updateInferredVal inferredVal
 
 loadInfer ::
-  MonadA m => Val (ExprIRef.ValIProperty m) ->
+  MonadA m => Memo -> Val (Load.ExprPropertyClosure m) ->
   T m (Val (Sugar.InputPayload m ()), Infer.Context)
-loadInfer val =
-  loadInferScope Infer.emptyScope val
+loadInfer memo val =
+  loadInferScope memo Infer.emptyScope val
   & (`runStateT` Infer.initialContext)
   & runMaybeT
   <&> fromMaybe (error "Type inference failed")
+  <&> _1 . Lens.mapped . _2 %~ Load.exprPropertyOfClosure
   <&> _1 . Lens.mapped %~ mkInputPayload
   where
     mkInputPayload (inferPl, stored) = Sugar.InputPayload

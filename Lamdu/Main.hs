@@ -45,6 +45,7 @@ import qualified Lamdu.GUI.CodeEdit.Settings as Settings
 import qualified Lamdu.GUI.VersionControl as VersionControlGUI
 import qualified Lamdu.GUI.WidgetEnvT as WE
 import qualified Lamdu.GUI.WidgetIds as WidgetIds
+import qualified Lamdu.Infer.Memo as InferMemo
 import qualified Lamdu.VersionControl as VersionControl
 import qualified System.Directory as Directory
 
@@ -246,13 +247,14 @@ runDb win getConfig font db = do
     }
   wrapFlyNav <- makeFlyNav
   let
+    inferMemo = InferMemo.make
     makeWidget (config, size) = do
       cursor <- dbToIO . Transaction.getP $ DbLayout.cursor DbLayout.revisionProps
       sizeFactor <- readIORef sizeFactorRef
       globalEventMap <- mkGlobalEventMap config settingsRef
       let eventMap = globalEventMap `mappend` sizeFactorEvents config
       widget <-
-        mkWidgetWithFallback config settingsRef (baseStyle config font) dbToIO
+        mkWidgetWithFallback inferMemo config settingsRef (baseStyle config font) dbToIO
         (size / sizeFactor, cursor)
       return . Widget.scale sizeFactor $ Widget.weakerEvents eventMap widget
   makeWidgetCached <- cacheMakeWidget makeWidget
@@ -279,21 +281,22 @@ mkGlobalEventMap config settingsRef = do
     modifyIORef settingsRef $ Settings.sInfoMode .~ next
 
 mkWidgetWithFallback ::
-  Config -> IORef Settings ->
+  InferMemo.Memo -> Config -> IORef Settings ->
   TextEdit.Style ->
   (forall a. Transaction DbLayout.DbM a -> IO a) ->
   (Widget.Size, Widget.Id) ->
   IO (Widget IO)
-mkWidgetWithFallback config settingsRef style dbToIO (size, cursor) = do
+mkWidgetWithFallback inferMemo config settingsRef style dbToIO (size, cursor) = do
   settings <- readIORef settingsRef
+  let fromCursor = makeRootWidget inferMemo config settings style dbToIO size
   (isValid, widget) <-
     dbToIO $ do
-      candidateWidget <- fromCursor settings cursor
+      candidateWidget <- fromCursor cursor
       (isValid, widget) <-
         if candidateWidget ^. Widget.wIsFocused
         then return (True, candidateWidget)
         else do
-          finalWidget <- fromCursor settings rootCursor
+          finalWidget <- fromCursor rootCursor
           Transaction.setP (DbLayout.cursor DbLayout.revisionProps) rootCursor
           return (False, finalWidget)
       unless (widget ^. Widget.wIsFocused) $
@@ -308,18 +311,17 @@ mkWidgetWithFallback config settingsRef style dbToIO (size, cursor) = do
           ["invalid cursor bg"] (Config.invalidCursorBGColor config)
         & return
   where
-    fromCursor settings = makeRootWidget config settings style dbToIO size
     rootCursor = WidgetIds.fromGuid rootGuid
 
 rootGuid :: Guid
 rootGuid = IRef.guid $ DbLayout.panes DbLayout.codeIRefs
 
 makeRootWidget ::
-  Config -> Settings -> TextEdit.Style ->
+  InferMemo.Memo -> Config -> Settings -> TextEdit.Style ->
   (forall a. Transaction DbLayout.DbM a -> IO a) ->
   Widget.Size -> Widget.Id ->
   Transaction DbLayout.DbM (Widget IO)
-makeRootWidget config settings style dbToIO size cursor = do
+makeRootWidget inferMemo config settings style dbToIO size cursor = do
   actions <- VersionControl.makeActions
   runWidgetEnvT cursor style config $ do
     codeEdit <-
@@ -338,6 +340,7 @@ makeRootWidget config settings style dbToIO size cursor = do
       { CodeEdit.codeProps = DbLayout.codeProps
       , CodeEdit.totalSize = size
       , CodeEdit.settings = settings
+      , CodeEdit.inferMemo = inferMemo
       }
     attachCursor eventResult = do
       maybe (return ()) (Transaction.setP (DbLayout.cursor DbLayout.revisionProps)) .

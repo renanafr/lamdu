@@ -33,6 +33,7 @@ import qualified Lamdu.GUI.BottleWidgets as BWidgets
 import qualified Lamdu.GUI.DefinitionEdit as DefinitionEdit
 import qualified Lamdu.GUI.WidgetEnvT as WE
 import qualified Lamdu.GUI.WidgetIds as WidgetIds
+import qualified Lamdu.Infer.Memo as InferMemo
 
 type T = Transaction
 
@@ -47,6 +48,7 @@ data Env m = Env
   { codeProps :: Anchors.CodeProps m
   , totalSize :: Widget.Size
   , settings :: Settings
+  , inferMemo :: InferMemo.Memo
   }
 
 totalWidth :: Env m -> Widget.R
@@ -160,7 +162,7 @@ makePaneWidget env defI = do
       Widget.wFrame %~
       Anim.onImages (Draw.tint (Config.inactiveTintColor config))
   fitToWidth (totalWidth env) . colorize <$>
-    DefinitionEdit.make (codeProps env) (settings env) defI
+    DefinitionEdit.make (codeProps env) (inferMemo env) (settings env) defI
 
 fitToWidth :: Widget.R -> Widget f -> Widget f
 fitToWidth width w

@@ -26,6 +26,7 @@ import qualified Lamdu.GUI.ExpressionGui.AddNextHoles as AddNextHoles
 import qualified Lamdu.GUI.ExpressionGui.Monad as ExprGuiM
 import qualified Lamdu.GUI.WidgetEnvT as WE
 import qualified Lamdu.GUI.WidgetIds as WidgetIds
+import qualified Lamdu.Infer.Memo as InferMemo
 import qualified Lamdu.Sugar.AddNames as AddNames
 import qualified Lamdu.Sugar.Convert as SugarConvert
 import qualified Lamdu.Sugar.Types as Sugar
@@ -33,10 +34,10 @@ import qualified Lamdu.Sugar.Types as Sugar
 type T = Transaction
 
 make ::
-  MonadA m => Anchors.CodeProps m -> Settings ->
+  MonadA m => Anchors.CodeProps m -> InferMemo.Memo -> Settings ->
   DefI m -> WidgetEnvT (T m) (WidgetT m)
-make cp settings defI = ExprGuiM.run ExpressionEdit.make cp settings $ do
-  defS <- ExprGuiM.transaction $ loadConvertDefI cp defI
+make cp inferMemo settings defI = ExprGuiM.run ExpressionEdit.make cp settings $ do
+  defS <- ExprGuiM.transaction $ loadConvertDefI cp inferMemo defI
   case defS ^. Sugar.drBody of
     Sugar.DefinitionBodyExpression bodyExpr ->
       makeExprDefinition defS bodyExpr
@@ -120,11 +121,11 @@ makeExprDefinition def bodyExpr = do
     name = def ^. Sugar.drName
 
 loadConvertDefI ::
-  MonadA m => Anchors.CodeProps m -> DefI m ->
+  MonadA m => Anchors.CodeProps m -> InferMemo.Memo -> DefI m ->
   T m (DefinitionN m ExprGuiM.Payload)
-loadConvertDefI cp defI =
+loadConvertDefI cp inferMemo defI =
   Load.loadDefinitionClosure defI >>=
-  SugarConvert.convertDefI cp
+  SugarConvert.convertDefI cp inferMemo
   >>= AddNames.addToDef
   <&> Lens.mapped . Lens.mapped . Lens.mapped %~ mkPayload
   <&> AddNextHoles.addToDef

@@ -2,7 +2,7 @@
 module Lamdu.Sugar.Convert.Monad
   ( Context(..), TagParamInfo(..), RecordParamsInfo(..)
   , scInferContext
-  , scCodeAnchors, scSpecialFunctions, scTagParamInfos, scRecordParamsInfos
+  , scCodeAnchors, scInferMemo, scSpecialFunctions, scTagParamInfos, scRecordParamsInfos
   , ConvertM(..), run
   , readContext, liftTransaction, local
   , codeAnchor
@@ -28,6 +28,7 @@ import qualified Lamdu.Data.Anchors as Anchors
 import qualified Lamdu.Expr.Type as T
 import qualified Lamdu.Expr.Val as V
 import qualified Lamdu.Infer as Infer
+import qualified Lamdu.Infer.Memo as InferMemo
 import qualified Lamdu.Sugar.Types as Sugar
 
 type T = Transaction
@@ -47,7 +48,8 @@ newtype ConvertM m a = ConvertM (ReaderT (Context m) (T m) a)
   deriving (Functor, Applicative, Monad)
 
 data Context m = Context
-  { _scInferContext :: Infer.Context
+  { _scInferMemo :: InferMemo.Memo
+  , _scInferContext :: Infer.Context
   , _scCodeAnchors :: Anchors.CodeProps m
   , _scSpecialFunctions :: Anchors.SpecialFunctions m
   , _scTagParamInfos :: Map T.Tag TagParamInfo -- tag guids
